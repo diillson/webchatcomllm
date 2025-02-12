@@ -1,4 +1,4 @@
-module github.com/chatcomStackspotAI
+module github.com/webchatcomllm
 
 go 1.23.1
 

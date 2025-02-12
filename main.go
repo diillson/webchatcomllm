@@ -3,9 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/chatcomStackspotAI/handlers"
-	"github.com/chatcomStackspotAI/llm"
-	"github.com/chatcomStackspotAI/middlewares"
+	"github.com/joho/godotenv"
+	"github
+	"github.com/webchatcomllm/handlers"
+	"github.com/webchatcomllm/llm"
 	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 	"html/template"
