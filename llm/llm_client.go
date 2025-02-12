@@ -2,7 +2,7 @@ package llm
 
 import (
 	"context"
-	"github.com/chatcomStackspotAI/models"
+	"github.com/webchatcomllm/models"
 )
 
 type LLMClient interface {

@@ -3,9 +3,9 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"github.com/chatcomStackspotAI/llm"
-	"github.com/chatcomStackspotAI/models"
 	"github.com/google/uuid"
+	"github.com/webchatcomllm/llm"
+	"github.com/webchatcomllm/models"
 	"go.uber.org/zap"
 	"net/http"
 	"time"
