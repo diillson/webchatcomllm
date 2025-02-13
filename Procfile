@@ -1,1 +1,1 @@
-web: bin/chatcomStackspotAI
+web: bin/webchatcomllm
