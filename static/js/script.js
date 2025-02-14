@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Estado do aplicativo
     let currentChatID = null;
-    let llmProvider = localStorage.getItem('llmProvider') || 'OPENAI';
+    let llmProvider = localStorage.getItem('llmProvider') || 'SPOT';
     let modelName = '';
     let assistantName = '';
     let shouldAutoScroll = true; // Controla se o scroll automático está ativo
