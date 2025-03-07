@@ -72,21 +72,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
             case 'CLAUDEAI':
                 if (model.includes('claude-3-5')) {
-                    return 'Claude 3.5 Sonet';
+                    return 'Claude 3.5 Sonnet';
                 } else if (model.includes('claude-2')) {
                     return 'Claude 2';
                 } else if (model.includes('claude-3-7')){
-                    return 'Claude 3.7 Sonet'
+                    return 'Claude 3.7 Sonnet'
                 }
                 return 'Claude AI';
 
             case 'CLAUDEAI-3.7':
                 if (model.includes('claude-3-5')) {
-                    return 'Claude 3.5 Sonet';
+                    return 'Claude 3.5 Sonnet';
                 } else if (model.includes('claude-2')) {
                     return 'Claude 2';
                 } else if (model.includes('claude-3-7')){
-                    return 'Claude 3.7 Sonet'
+                    return 'Claude 3.7 Sonnet'
                 }
                 return 'Claude AI';
 
