@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const toggleThemeButtonHidden = document.getElementById('toggle-theme-hidden');
     const openaiModel = document.body.getAttribute('data-openai-model') || 'gpt-4o-mini';
     const claudeModel = document.body.getAttribute('data-claude-model') || 'claude-3-5-sonnet-20241022';
+    const claude37Model = document.body.getAttribute('data-claude37-model') || 'claude-3-7-sonnet-20250219';
     const stackspotModel = document.body.getAttribute('data-spot-model') || 'spot-default';
 
     // Estado do aplicativo
@@ -70,12 +71,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 return `GPT (${model})`;
 
             case 'CLAUDEAI':
-                if (model.includes('claude-3')) {
+                if (model.includes('claude-3-5')) {
                     return 'Claude 3.5 Sonet';
                 } else if (model.includes('claude-2')) {
                     return 'Claude 2';
+                } else if (model.includes('claude-3-7')){
+                    return 'Claude 3.7 Sonet'
                 }
                 return 'Claude AI';
+
+            case 'CLAUDEAI-3.7':
+                if (model.includes('claude-3-5')) {
+                    return 'Claude 3.5 Sonet';
+                } else if (model.includes('claude-2')) {
+                    return 'Claude 2';
+                } else if (model.includes('claude-3-7')){
+                    return 'Claude 3.7 Sonet'
+                }
+                return 'Claude AI';
+
 
             case 'SPOT':
                 return 'GPT-4o';
@@ -162,6 +176,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
             case 'CLAUDEAI':
                 modelName = claudeModel;
+                break;
+            case 'CLAUDEAI-3.7':
+                modelName = claude37Model;
                 break;
             case 'STACKSPOT':
                 modelName = stackspotModel;

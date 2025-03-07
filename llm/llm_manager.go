@@ -58,6 +58,20 @@ func NewLLMManager(logger *zap.Logger) (*LLMManager, error) {
 		}
 	}
 
+	// Configurar a fábrica para ClaudeAI_3_7
+	claude_3_7APIKey := os.Getenv("CLAUDEAI_API_KEY")
+	if claudeAPIKey == "" {
+		logger.Warn("CLAUDEAI_API_KEY não está definido")
+	} else {
+		manager.clients["CLAUDEAI-3.7"] = func(model string) (LLMClient, error) {
+			model = os.Getenv("CLAUDEAI_3_7_MODEL")
+			if model == "" {
+				model = "claude-3-7-sonnet-20250219" // Modelo padrão
+			}
+			return NewClaudeAI_3_7Client(claude_3_7APIKey, model, logger), nil
+		}
+	}
+
 	return manager, nil
 }
 
@@ -82,6 +96,12 @@ func (m *LLMManager) GetClient(provider string, model string) (LLMClient, error)
 			selectedModel = "claude-3-5-sonnet-20241022" // Modelo padrão Claude
 		}
 		m.logger.Info("Selecionando modelo ClaudeAI", zap.String("model", selectedModel))
+	case "CLAUDEAI-3.7":
+		selectedModel = os.Getenv("CLAUDEAI_3_7_MODEL")
+		if selectedModel == "" {
+			selectedModel = "claude-3-7-sonnet-20250219" // Modelo padrão Claude
+		}
+		m.logger.Info("Selecionando modelo ClaudeAI 3.7", zap.String("model", selectedModel))
 	case "SPOT":
 		selectedModel = "spot-default"
 		m.logger.Info("Selecionando modelo GPT-4o", zap.String("model", selectedModel))
