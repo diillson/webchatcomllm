@@ -41,8 +41,10 @@ type RequestPayload struct {
 }
 
 type ResponsePayload struct {
-	Status   string `json:"status"`
-	Response string `json:"response"`
+	Status     string `json:"status"`
+	Response   string `json:"response"`
+	IsMarkdown bool   `json:"isMarkdown"` // NOVO: indica se a resposta é Markdown
+	Provider   string `json:"provider"`   // NOVO: identifica o provedor
 }
 
 func WebSocketHandler(llmManager manager.LLMManager, logger *zap.Logger) http.HandlerFunc {
@@ -75,15 +77,13 @@ func WebSocketHandler(llmManager manager.LLMManager, logger *zap.Logger) http.Ha
 func handleWebSocketMessage(conn *websocket.Conn, payload []byte, llmManager manager.LLMManager, logger *zap.Logger) {
 	var req RequestPayload
 	if err := json.Unmarshal(payload, &req); err != nil {
-		sendErrorResponse(conn, "Payload inválido")
+		sendErrorResponse(conn, "Payload inválido", req.Provider)
 		return
 	}
 
-	// REMOVIDO: O envio do status "processing" foi retirado para que o frontend tenha controle total do indicador.
-
 	fileContext, err := processFiles(req.Files, logger)
 	if err != nil {
-		sendErrorResponse(conn, err.Error())
+		sendErrorResponse(conn, err.Error(), req.Provider)
 		return
 	}
 
@@ -94,7 +94,7 @@ func handleWebSocketMessage(conn *websocket.Conn, payload []byte, llmManager man
 
 	client, err := llmManager.GetClient(req.Provider, req.Model)
 	if err != nil {
-		sendErrorResponse(conn, err.Error())
+		sendErrorResponse(conn, err.Error(), req.Provider)
 		return
 	}
 
@@ -103,13 +103,68 @@ func handleWebSocketMessage(conn *websocket.Conn, payload []byte, llmManager man
 
 	llmResponse, err := client.SendPrompt(ctx, fullPrompt, req.History, 0)
 	if err != nil {
-		sendErrorResponse(conn, err.Error())
+		sendErrorResponse(conn, err.Error(), req.Provider)
 		return
 	}
 
-	if err := conn.WriteJSON(ResponsePayload{Status: "completed", Response: llmResponse}); err != nil {
+	// NOVO: Detectar se a resposta contém Markdown
+	isMarkdown := detectMarkdown(llmResponse)
+
+	// Log para debug
+	logger.Info("Resposta LLM processada",
+		zap.String("provider", req.Provider),
+		zap.Bool("is_markdown", isMarkdown),
+		zap.Int("response_length", len(llmResponse)))
+
+	if err := conn.WriteJSON(ResponsePayload{
+		Status:     "completed",
+		Response:   llmResponse,
+		IsMarkdown: isMarkdown,
+		Provider:   req.Provider,
+	}); err != nil {
 		logger.Error("Erro ao enviar resposta final do LLM", zap.Error(err))
 	}
+}
+
+// NOVA FUNÇÃO: Detecta se o texto contém Markdown
+func detectMarkdown(text string) bool {
+	// Indicadores comuns de Markdown
+	markdownIndicators := []string{
+		"```",         // Code blocks
+		"# ",          // Headers
+		"## ",         // Headers
+		"### ",        // Headers
+		"- ",          // Lists
+		"* ",          // Lists
+		"1. ",         // Ordered lists
+		"**",          // Bold
+		"__",          // Bold
+		"*",           // Italic
+		"_",           // Italic
+		"[",           // Links
+		"](",          // Links
+		"|",           // Tables
+		"---",         // Horizontal rule
+		"```yaml",     // YAML blocks
+		"```json",     // JSON blocks
+		"```python",   // Python blocks
+		"apiVersion:", // Kubernetes YAML
+		"kind:",       // Kubernetes YAML
+		"metadata:",   // Kubernetes YAML
+	}
+
+	for _, indicator := range markdownIndicators {
+		if strings.Contains(text, indicator) {
+			return true
+		}
+	}
+
+	// Se tem múltiplas quebras de linha seguidas, provavelmente é formatado
+	if strings.Contains(text, "\n\n") {
+		return true
+	}
+
+	return false
 }
 
 func processFiles(files []FilePayload, logger *zap.Logger) (string, error) {
@@ -138,6 +193,11 @@ func processFiles(files []FilePayload, logger *zap.Logger) (string, error) {
 	return contextBuilder.String(), nil
 }
 
-func sendErrorResponse(conn *websocket.Conn, message string) {
-	_ = conn.WriteJSON(ResponsePayload{Status: "error", Response: message})
+func sendErrorResponse(conn *websocket.Conn, message string, provider string) {
+	_ = conn.WriteJSON(ResponsePayload{
+		Status:     "error",
+		Response:   message,
+		IsMarkdown: false,
+		Provider:   provider,
+	})
 }

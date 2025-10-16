@@ -38,8 +38,14 @@
             <div id="file-preview-container"></div>
             <textarea id="user-input" placeholder="Digite sua mensagem ou anexe arquivos..." rows="1"></textarea>
             <div class="form-actions">
-                <button type="button" id="upload-file-button" aria-label="Anexar Arquivos"><i class="fas fa-paperclip"></i></button>
-                <input type="file" id="file-input" multiple webkitdirectory style="display: none;" />
+                <button type="button" id="upload-file-button" aria-label="Anexar Arquivos" title="Anexar arquivos">
+                    <i class="fas fa-paperclip"></i>
+                </button>
+                <button type="button" id="upload-folder-button" aria-label="Anexar Pasta" title="Anexar pasta/diretório">
+                    <i class="fas fa-folder-open"></i>
+                </button>
+                <input type="file" id="file-input" multiple style="display: none;" />
+                <input type="file" id="folder-input" webkitdirectory directory multiple style="display: none;" />
                 <button type="submit" aria-label="Enviar Mensagem"><i class="fas fa-paper-plane"></i></button>
                 <button type="button" id="clear-history-button" aria-label="Limpar Conversa"><i class="fas fa-trash-alt"></i></button>
                 <select id="llm-provider-select" aria-label="Selecionar Modelo de IA">

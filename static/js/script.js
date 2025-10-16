@@ -10,7 +10,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const toggleSidebarButton = document.getElementById('toggle-sidebar');
     const toggleSidebarHiddenButton = document.getElementById('toggle-sidebar-hidden');
     const uploadFileButton = document.getElementById('upload-file-button');
+    const uploadFolderButton = document.getElementById('upload-folder-button');
     const fileInput = document.getElementById('file-input');
+    const folderInput = document.getElementById('folder-input');
     const filePreviewContainer = document.getElementById('file-preview-container');
     const clearHistoryButton = document.getElementById('clear-history-button');
 
@@ -37,6 +39,8 @@ document.addEventListener('DOMContentLoaded', () => {
         setupTouchOptimizations();
         adjustTextareaHeight();
 
+        addCopyButtonsToCode();
+
         if (localStorage.getItem('sidebar') === 'hidden') {
             document.body.classList.add('sidebar-hidden');
         }
@@ -56,8 +60,14 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleThemeButton.addEventListener('click', toggleTheme);
         toggleSidebarButton.addEventListener('click', toggleSidebar);
         toggleSidebarHiddenButton.addEventListener('click', toggleSidebar);
+
+        // Botões de upload
         uploadFileButton.addEventListener('click', () => fileInput.click());
+        uploadFolderButton.addEventListener('click', () => folderInput.click());
+
         fileInput.addEventListener('change', handleFilesSelected);
+        folderInput.addEventListener('change', handleFilesSelected);
+
         clearHistoryButton.addEventListener('click', clearCurrentChatHistory);
     }
 
@@ -75,7 +85,16 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleServerMessage(data) {
         removeLastMessageIfTyping();
         if (data.status === 'completed') {
-            addMessageWithTypingEffect(assistantName, data.response, 'assistant-message', true, true);
+            const isMarkdown = data.isMarkdown !== undefined ? data.isMarkdown : true;
+
+            console.log('Mensagem recebida:', {
+                provider: data.provider,
+                isMarkdown: isMarkdown,
+                length: data.response.length,
+                preview: data.response.substring(0, 100)
+            });
+
+            addMessageWithTypingEffect(assistantName, data.response, 'assistant-message', isMarkdown, true);
         } else if (data.status === 'error') {
             addMessage('Erro', data.response, 'error-message', false, false);
         }
@@ -91,7 +110,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (message) addMessage('Você', message, 'user-message', false, true);
-        if (attachedFiles.length > 0) addMessage('Sistema', `Enviando ${attachedFiles.length} arquivo(s) para análise...`, 'system-message', false, false);
+        if (attachedFiles.length > 0) {
+            const totalSize = attachedFiles.reduce((sum, f) => sum + (f.size || 0), 0);
+            addMessage('Sistema', `Enviando ${attachedFiles.length} arquivo(s) (${(totalSize / 1024).toFixed(2)}KB) para análise...`, 'system-message', false, false);
+        }
 
         sendMessageToServer(message);
 
@@ -115,28 +137,70 @@ document.addEventListener('DOMContentLoaded', () => {
         const files = Array.from(event.target.files);
         if (files.length === 0) return;
 
+        addMessage('Sistema', `Processando ${files.length} arquivo(s)...`, 'system-message', false, false);
+
         attachedFiles = [];
-        updateFilePreview();
+        const maxFileSize = 5 * 1024 * 1024;
+        const maxTotalSize = 20 * 1024 * 1024;
+        let totalSize = 0;
+        let skippedFiles = [];
 
         const filePromises = files.map(file =>
             new Promise((resolve, reject) => {
+                if (file.size > maxFileSize) {
+                    skippedFiles.push(`${file.name} (muito grande: ${(file.size / 1024 / 1024).toFixed(2)}MB)`);
+                    resolve();
+                    return;
+                }
+
+                if (totalSize + file.size > maxTotalSize) {
+                    skippedFiles.push(`${file.name} (limite total atingido)`);
+                    resolve();
+                    return;
+                }
+
                 const reader = new FileReader();
                 reader.onload = e => {
-                    attachedFiles.push({ name: file.webkitRelativePath || file.name, content: e.target.result });
+                    const relativePath = file.webkitRelativePath || file.name;
+                    attachedFiles.push({
+                        name: relativePath,
+                        content: e.target.result,
+                        size: file.size
+                    });
+                    totalSize += file.size;
                     resolve();
                 };
-                reader.onerror = () => reject(new Error(`Erro ao ler o arquivo ${file.name}`));
+                reader.onerror = () => reject(new Error(`Erro ao ler ${file.name}`));
                 reader.readAsText(file);
             })
         );
 
         try {
             await Promise.all(filePromises);
-            updateFilePreview();
+            removeLastMessageIfSystem();
+
+            if (skippedFiles.length > 0) {
+                addMessage('Aviso',
+                    `Arquivos ignorados:\n${skippedFiles.join('\n')}`,
+                    'system-message', false, false);
+            }
+
+            if (attachedFiles.length > 0) {
+                addMessage('Sistema',
+                    `${attachedFiles.length} arquivo(s) anexado(s) (${(totalSize / 1024).toFixed(2)}KB)`,
+                    'system-message', false, false);
+                updateFilePreview();
+            } else {
+                addMessage('Erro',
+                    'Nenhum arquivo válido foi selecionado.',
+                    'error-message', false, false);
+            }
         } catch (error) {
+            removeLastMessageIfSystem();
             addMessage('Erro', error.message, 'error-message', false, false);
         }
         fileInput.value = '';
+        folderInput.value = '';
     }
 
     function updateFilePreview() {
@@ -147,12 +211,30 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         filePreviewContainer.style.display = 'block';
+
+        const totalSize = attachedFiles.reduce((sum, f) => sum + (f.size || 0), 0);
+        const summary = document.createElement('div');
+        summary.style.cssText = 'font-size: 11px; color: #999; margin-bottom: 5px; padding: 5px;';
+        summary.textContent = `${attachedFiles.length} arquivo(s) - ${(totalSize / 1024).toFixed(2)}KB total`;
+        filePreviewContainer.appendChild(summary);
+
         const fileList = document.createElement('ul');
+        fileList.style.maxHeight = '150px';
+        fileList.style.overflowY = 'auto';
+
         attachedFiles.forEach((file, index) => {
             const listItem = document.createElement('li');
-            listItem.textContent = file.name;
+            const fileSize = file.size ? ` (${(file.size / 1024).toFixed(1)}KB)` : '';
+            listItem.innerHTML = `
+                    <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" 
+                          title="${file.name}">
+                        ${file.name}${fileSize}
+                    </span>
+                `;
+
             const removeButton = document.createElement('button');
             removeButton.innerHTML = '&times;';
+            removeButton.title = 'Remover arquivo';
             removeButton.onclick = () => {
                 attachedFiles.splice(index, 1);
                 updateFilePreview();
@@ -181,6 +263,12 @@ document.addEventListener('DOMContentLoaded', () => {
         assistantName = llmProviderSelect.options[llmProviderSelect.selectedIndex].text;
     }
 
+    function scrollToBottom(behavior = 'smooth') {
+        requestAnimationFrame(() => {
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        });
+    }
+
     function addMessage(sender, text, messageClass, isMarkdown = false, save = false, isTyping = false) {
         const messageElement = document.createElement('div');
         messageElement.classList.add('message', messageClass);
@@ -191,57 +279,170 @@ document.addEventListener('DOMContentLoaded', () => {
             contentElement.innerHTML = `<strong>${sender}:</strong> <span class="typing-indicator"><span></span><span></span><span></span></span>`;
             messageElement.classList.add('typing');
         } else {
-            const cleanHtml = isMarkdown ? DOMPurify.sanitize(marked.parse(text)) : DOMPurify.sanitize(text.replace(/</g, "&lt;").replace(/>/g, "&gt;"));
+            let cleanHtml;
+            if (isMarkdown) {
+                const parsed = marked.parse(text);
+                cleanHtml = DOMPurify.sanitize(parsed);
+            } else {
+                cleanHtml = DOMPurify.sanitize(text.replace(/</g, "&lt;").replace(/>/g, "&gt;"));
+            }
             contentElement.innerHTML = `<strong>${sender}:</strong> ${cleanHtml}`;
         }
 
         messageElement.appendChild(contentElement);
         messagesDiv.appendChild(messageElement);
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        scrollToBottom();
 
         if (save) saveMessage(sender, text, isMarkdown);
         if (isMarkdown && !isTyping) {
-            messageElement.querySelectorAll('pre code').forEach(hljs.highlightElement);
+            messageElement.querySelectorAll('pre code').forEach(block => {
+                hljs.highlightElement(block);
+            });
+            messageElement.querySelectorAll('pre').forEach(pre => {
+                if (!pre.closest('.code-block-wrapper')) {
+                    addCopyButton(pre);
+                }
+            });
         }
         return contentElement;
     }
 
     function addMessageWithTypingEffect(sender, text, messageClass, isMarkdown, save) {
-        const contentElement = addMessage(sender, '', messageClass, isMarkdown, false, false);
-        typeWriterEffect(contentElement, sender, text, isMarkdown, () => {
-            if (save) saveMessage(sender, text, isMarkdown);
-            contentElement.querySelectorAll('pre code').forEach(hljs.highlightElement);
-        });
+        const messageElement = document.createElement('div');
+        messageElement.classList.add('message', messageClass);
+        const contentElement = document.createElement('div');
+        contentElement.classList.add('message-content');
+        contentElement.innerHTML = `<strong>${sender}:</strong> <span class="typing-content"></span>`;
+
+        messageElement.appendChild(contentElement);
+        messagesDiv.appendChild(messageElement);
+        scrollToBottom();
+
+        const typingContainer = contentElement.querySelector('.typing-content');
+
+        if (isMarkdown) {
+            typeWriterMarkdown(typingContainer, text, () => {
+                typingContainer.classList.add('complete');
+                if (save) saveMessage(sender, text, isMarkdown);
+                contentElement.querySelectorAll('pre code').forEach(block => {
+                    hljs.highlightElement(block);
+                });
+                contentElement.querySelectorAll('pre').forEach(pre => {
+                    if (!pre.closest('.code-block-wrapper')) {
+                        addCopyButton(pre);
+                    }
+                });
+            });
+        } else {
+            typeWriterPlainText(typingContainer, text, () => {
+                typingContainer.classList.add('complete');
+                if (save) saveMessage(sender, text, isMarkdown);
+            });
+        }
     }
 
-    function typeWriterEffect(element, sender, text, isMarkdown, onComplete) {
+    function typeWriterPlainText(container, text, onComplete) {
         let i = 0;
-        const speed = 5; // Mais rápido
-
-        element.innerHTML = `<strong>${sender}:</strong> `;
-        const textContainer = document.createElement('span');
-        element.appendChild(textContainer);
+        const speed = 10;
 
         function type() {
             if (i < text.length) {
-                const char = text.charAt(i);
+                container.textContent += text.charAt(i);
                 i++;
-                textContainer.textContent += char;
-                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                scrollToBottom();
                 setTimeout(type, speed);
             } else {
-                // Ao final, renderiza o Markdown completo de uma vez para garantir a formatação correta
-                const finalHtml = isMarkdown ? DOMPurify.sanitize(marked.parse(text)) : DOMPurify.sanitize(text);
-                element.innerHTML = `<strong>${sender}:</strong> ${finalHtml}`;
                 if (onComplete) onComplete();
             }
         }
         type();
     }
 
+    function typeWriterMarkdown(container, markdown, onComplete) {
+        const lines = markdown.split('\n');
+        let currentLine = 0;
+        let currentChar = 0;
+        let inCodeBlock = false;
+        let codeBlockContent = '';
+        let codeBlockLanguage = '';
+        let accumulatedContent = '';
+
+        function typeNextChar() {
+            if (currentLine >= lines.length) {
+                const finalHtml = DOMPurify.sanitize(marked.parse(accumulatedContent));
+                container.innerHTML = finalHtml;
+                if (onComplete) onComplete();
+                return;
+            }
+
+            const line = lines[currentLine];
+
+            if (line.startsWith('```')) {
+                if (!inCodeBlock) {
+                    inCodeBlock = true;
+                    codeBlockLanguage = line.substring(3).trim();
+                    codeBlockContent = '';
+                } else {
+                    inCodeBlock = false;
+                    accumulatedContent += '```' + codeBlockLanguage + '\n' + codeBlockContent + '\n```\n';
+                    codeBlockContent = '';
+                    codeBlockLanguage = '';
+                    currentLine++;
+                    currentChar = 0;
+                    renderCurrentContent();
+                    setTimeout(typeNextChar, 50);
+                    return;
+                }
+                currentLine++;
+                currentChar = 0;
+                setTimeout(typeNextChar, 20);
+                return;
+            }
+
+            if (inCodeBlock) {
+                codeBlockContent += line + '\n';
+                currentLine++;
+                currentChar = 0;
+                setTimeout(typeNextChar, 20);
+                return;
+            }
+
+            if (currentChar < line.length) {
+                accumulatedContent += line.charAt(currentChar);
+                currentChar++;
+                renderCurrentContent();
+                setTimeout(typeNextChar, 5);
+            } else {
+                accumulatedContent += '\n';
+                currentLine++;
+                currentChar = 0;
+                renderCurrentContent();
+                setTimeout(typeNextChar, 20);
+            }
+        }
+
+        function renderCurrentContent() {
+            const html = DOMPurify.sanitize(marked.parse(accumulatedContent));
+            container.innerHTML = html;
+            scrollToBottom();
+        }
+
+        typeNextChar();
+    }
+
     function removeLastMessageIfTyping() {
         const typingMessage = messagesDiv.querySelector('.message.typing');
         if (typingMessage) messagesDiv.removeChild(typingMessage);
+    }
+
+    function removeLastMessageIfSystem() {
+        const messages = messagesDiv.querySelectorAll('.message.system-message');
+        if (messages.length > 0) {
+            const lastSystem = messages[messages.length - 1];
+            if (lastSystem.textContent.includes('Processando')) {
+                messagesDiv.removeChild(lastSystem);
+            }
+        }
     }
 
     function saveMessage(sender, text, isMarkdown) {
@@ -367,7 +568,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function setupMobileInteractions() {
-        // Fechar sidebar ao clicar no overlay (mobile)
         if (window.innerWidth <= 768) {
             document.addEventListener('click', (e) => {
                 const sidebar = document.getElementById('sidebar');
@@ -382,7 +582,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        // Prevenir zoom duplo no iOS
         let lastTouchEnd = 0;
         document.addEventListener('touchend', (e) => {
             const now = Date.now();
@@ -392,41 +591,100 @@ document.addEventListener('DOMContentLoaded', () => {
             lastTouchEnd = now;
         }, false);
 
-        // Auto-scroll mais suave em mobile
         if ('ontouchstart' in window) {
             messagesDiv.style.scrollBehavior = 'smooth';
         }
     }
 
     function handleOrientationChange() {
-        // Ajustar layout quando o dispositivo roda
         window.addEventListener('orientationchange', () => {
             setTimeout(() => {
-                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                scrollToBottom();
                 adjustTextareaHeight();
             }, 300);
         });
     }
 
     function adjustTextareaHeight() {
-        const maxHeight = window.innerHeight * 0.3; // 30% da altura da tela
+        const maxHeight = window.innerHeight * 0.3;
         userInput.style.maxHeight = `${maxHeight}px`;
     }
 
     function setupTouchOptimizations() {
-        // Melhorar performance de scroll em mobile
         messagesDiv.style.webkitOverflowScrolling = 'touch';
-
-        // Prevenir pull-to-refresh em alguns navegadores
         document.body.style.overscrollBehavior = 'contain';
     }
 
-    // Atualizar a função autoResizeTextarea
     function autoResizeTextarea() {
         this.style.height = 'auto';
         const maxHeight = window.innerWidth <= 768 ?
             window.innerHeight * 0.25 : 200;
         this.style.height = `${Math.min(this.scrollHeight, maxHeight)}px`;
+    }
+
+    function addCopyButtonsToCode() {
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                mutation.addedNodes.forEach((node) => {
+                    if (node.nodeType === 1) {
+                        const preElements = node.querySelectorAll('pre');
+                        preElements.forEach(pre => {
+                            if (!pre.closest('.code-block-wrapper')) {
+                                addCopyButton(pre);
+                            }
+                        });
+                    }
+                });
+            });
+        });
+
+        observer.observe(messagesDiv, {
+            childList: true,
+            subtree: true
+        });
+
+        document.querySelectorAll('pre').forEach(pre => {
+            if (!pre.closest('.code-block-wrapper')) {
+                addCopyButton(pre);
+            }
+        });
+    }
+
+    function addCopyButton(preElement) {
+        if (preElement.querySelector('.copy-button') || preElement.closest('.code-block-wrapper')) return;
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'code-block-wrapper';
+        preElement.parentNode.insertBefore(wrapper, preElement);
+        wrapper.appendChild(preElement);
+
+        const button = document.createElement('button');
+        button.className = 'copy-button';
+        button.innerHTML = '<i class="fas fa-copy"></i>';
+        button.setAttribute('aria-label', 'Copiar código');
+
+        button.onclick = async () => {
+            const code = preElement.querySelector('code').textContent;
+            try {
+                await navigator.clipboard.writeText(code);
+                button.innerHTML = '<i class="fas fa-check"></i>';
+                button.classList.add('copied');
+                setTimeout(() => {
+                    button.innerHTML = '<i class="fas fa-copy"></i>';
+                    button.classList.remove('copied');
+                }, 2000);
+            } catch (err) {
+                console.error('Erro ao copiar:', err);
+                button.innerHTML = '<i class="fas fa-times"></i>';
+                button.classList.add('error');
+                setTimeout(() => {
+                    button.innerHTML = '<i class="fas fa-copy"></i>';
+                    button.classList.remove('error');
+                }, 2000);
+            }
+        };
+
+        wrapper.appendChild(button);
     }
 
     initialize();
