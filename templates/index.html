@@ -1,88 +1,61 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <!-- Metadados -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Seu Chat com LLM</title>
-    <!-- Estilos -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#202123">
+    <title>Web Chat com LLMs</title>
     <link rel="stylesheet" href="/static/css/styles.css">
-    <!-- Font Awesome para ícones -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Marked.js -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
-    <!-- DOMPurify -->
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@2.4.0/dist/purify.min.js" defer></script>
-    <!-- Highlight.js CSS -->
     <link id="highlight-style" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/monokai.min.css">
-    <!-- Highlight.js JS -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js" defer></script>
 </head>
-<body
-        data-openai-model="{{.OpenAIModel}}"
-        data-claude-model="{{.ClaudeModel}}"
-        data-claude37-model="{{.Claude37Model}}"
-        data-spot-model="{{.DefaultModel}}"
-        data-current-model="{{.CurrentModel}}">
-<!-- Container Principal -->
+<body>
 <div id="main-container">
-    <!-- Barra Lateral -->
-    <aside id="sidebar" class="hidden">
-        <!-- Botões dentro da barra lateral -->
-        <div class="sidebar-buttons">
-            <button id="toggle-sidebar" aria-label="Ocultar barra lateral" class="toggle-sidebar">
-                <i class="fas fa-angle-left"></i>
-            </button>
-            <button id="toggle-theme" aria-label="Alternar tema" class="toggle-theme">
-                <i class="fas fa-moon"></i>
-            </button>
+    <aside id="sidebar">
+        <div class="sidebar-header">
+            <button id="new-chat-button"><i class="fas fa-plus"></i> Nova Conversa</button>
         </div>
         <div id="chat-list">
-            <!-- Lista de conversas anteriores será gerada dinamicamente aqui -->
+            <!-- A lista de conversas será preenchida pelo JS -->
         </div>
-        <button id="new-chat-button" aria-label="Iniciar nova conversa">
-            <i class="fas fa-plus"></i> Nova Conversa
-        </button>
+        <div class="sidebar-footer">
+            <button id="toggle-sidebar" aria-label="Ocultar Barra Lateral"><i class="fas fa-times"></i></button>
+        </div>
     </aside>
 
-    <!-- Área Principal do Chat -->
     <main id="chat-container">
-        <!-- Botões Superiores -->
-        <div class="top-left-buttons">
-            <!-- Botão de Toggle Sidebar -->
-            <button id="toggle-sidebar-hidden" aria-label="Mostrar barra lateral" class="toggle-sidebar">
-                <i class="fas fa-bars"></i>
-            </button>
-            <!-- Botão de Alternância de Tema -->
-            <button id="toggle-theme-hidden" aria-label="Alternar tema" class="toggle-theme">
-                <i class="fas fa-moon"></i>
-            </button>
+        <div class="top-bar">
+            <button id="toggle-sidebar-hidden" class="top-button" aria-label="Mostrar Barra Lateral"><i class="fas fa-bars"></i></button>
+            <button id="toggle-theme" class="top-button" aria-label="Alternar Tema"><i class="fas fa-moon"></i></button>
         </div>
-        <!-- Mensagens -->
+
         <div id="messages"></div>
-        <!-- Formulário de Entrada -->
-        <form id="chat-form" aria-label="Formulário de Chat">
-            <textarea id="user-input" placeholder="Digite sua mensagem..." required aria-label="Entrada de mensagem" rows="1"></textarea>
+
+        <form id="chat-form">
+            <div id="file-preview-container"></div>
+            <textarea id="user-input" placeholder="Digite sua mensagem ou anexe arquivos..." rows="1"></textarea>
             <div class="form-actions">
-                <button type="submit" aria-label="Enviar mensagem">
-                    <i class="fas fa-paper-plane"></i>
-                </button>
-                <button type="button" id="clear-history-button" aria-label="Limpar histórico">
-                    <i class="fas fa-trash-alt"></i>
-                </button>
-                <select id="llm-provider-select" aria-label="Selecionar Provedor de LLM">
-<!--                    Desabilitando StaskspotAI em cumprimento das suas diretrizes.-->
-                    <option value="OPENAI">OpenAI - o1-preview</option>
-                    <option value="SPOT">OpenAI - 4o</option>
-                    <option value="CLAUDEAI">ClaudeAI - 3.5 Sonnet</option>
-                    <option value="CLAUDEAI-3.7">ClaudeAI - 3.7 Sonnet</option>
+                <button type="button" id="upload-file-button" aria-label="Anexar Arquivos"><i class="fas fa-paperclip"></i></button>
+                <input type="file" id="file-input" multiple webkitdirectory style="display: none;" />
+                <button type="submit" aria-label="Enviar Mensagem"><i class="fas fa-paper-plane"></i></button>
+                <button type="button" id="clear-history-button" aria-label="Limpar Conversa"><i class="fas fa-trash-alt"></i></button>
+                <select id="llm-provider-select" aria-label="Selecionar Modelo de IA">
+                    <option value="GPT-5" data-model="stackspot-ai">OpenAI (GPT-5)</option>
+                    <option value="OPENAI" data-model="gpt-4o">OpenAI (GPT-4o)</option>
+                    <option value="CLAUDE" data-model="claude-sonnet-4-20250514">Claude (Sonnet 4)</option>
+                    <option value="CLAUDE" data-model="claude-sonnet-4-5-20250929">Claude (Sonnet 4.5)</option>
                 </select>
             </div>
         </form>
     </main>
 </div>
 
-<!-- Scripts -->
-<script src="/static/js/script.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@2.4.0/dist/purify.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+<script src="/static/js/script.js"></script>
 </body>
 </html>

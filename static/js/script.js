@@ -1,274 +1,265 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // Variáveis do DOM
+    // --- Elementos do DOM ---
     const chatListDiv = document.getElementById('chat-list');
     const chatForm = document.getElementById('chat-form');
     const userInput = document.getElementById('user-input');
     const messagesDiv = document.getElementById('messages');
     const newChatButton = document.getElementById('new-chat-button');
-    const toggleSidebarButton = document.getElementById('toggle-sidebar');
-    const sidebar = document.getElementById('sidebar');
     const llmProviderSelect = document.getElementById('llm-provider-select');
     const toggleThemeButton = document.getElementById('toggle-theme');
-    const highlightStyleLink = document.getElementById('highlight-style');
+    const toggleSidebarButton = document.getElementById('toggle-sidebar');
+    const toggleSidebarHiddenButton = document.getElementById('toggle-sidebar-hidden');
+    const uploadFileButton = document.getElementById('upload-file-button');
+    const fileInput = document.getElementById('file-input');
+    const filePreviewContainer = document.getElementById('file-preview-container');
     const clearHistoryButton = document.getElementById('clear-history-button');
-    const chatContainer = document.getElementById('chat-container');
-    const toggleSidebarButtonHidden = document.getElementById('toggle-sidebar-hidden');
-    const toggleThemeButtonHidden = document.getElementById('toggle-theme-hidden');
-    const openaiModel = document.body.getAttribute('data-openai-model') || 'gpt-4o-mini';
-    const claudeModel = document.body.getAttribute('data-claude-model') || 'claude-3-5-sonnet-20241022';
-    const claude37Model = document.body.getAttribute('data-claude37-model') || 'claude-3-7-sonnet-20250219';
-    const stackspotModel = document.body.getAttribute('data-spot-model') || 'spot-default';
 
-    // Estado do aplicativo
+    // --- Estado da Aplicação ---
     let currentChatID = null;
-    let llmProvider = localStorage.getItem('llmProvider') || 'SPOT';
-    let modelName = '';
-    let assistantName = '';
-    let shouldAutoScroll = true; // Controla se o scroll automático está ativo
-
-    // Verificar se o session_id já existe, caso contrário, gerá-lo e salvá-lo no localStorage
-    let sessionId = localStorage.getItem('session_id');
-    if (!sessionId) {
-        sessionId = generateUUID();
-        localStorage.setItem('session_id', sessionId);
-    }
-
-    // eventos
-    toggleSidebarButtonHidden.addEventListener('click', toggleSidebar);
-    toggleThemeButtonHidden.addEventListener('click', toggleTheme);
-
-    // Função para gerar um UUID
-    function generateUUID() {
-        let d = new Date().getTime();
-        if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
-            d += performance.now(); // Usa o timer de alta precisão se disponível
-        }
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-            const r = (d + Math.random() * 16) % 16 | 0;
-            d = Math.floor(d / 16);
-            return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-        });
-    }
-
-    function getAssistantName(provider, model) {
-        console.log('Getting assistant name for:', provider, model);
-
-        switch (provider) {
-            case 'OPENAI':
-                if (model.includes('gpt-4o-mini')) {
-                    return 'GPT-4o-mini';
-                } else if (model.includes('gpt-4')) {
-                    return 'GPT-4';
-                } else if (model.includes('gpt-4o')) {
-                    return 'GPT-4o';
-                } else if (model.includes('gpt-3.5')) {
-                    return 'ChatGPT';
-                } else if (model.includes('o1-preview')) {
-                    return 'GPT-o1-preview';
-                } else if (model.includes('o1')) {
-                    return 'GPT-o1';
-                }
-                return `GPT (${model})`;
-
-            case 'CLAUDEAI':
-                if (model.includes('claude-3-5')) {
-                    return 'Claude 3.5 Sonnet';
-                } else if (model.includes('claude-2')) {
-                    return 'Claude 2';
-                } else if (model.includes('claude-3-7')){
-                    return 'Claude 3.7 Sonnet'
-                }
-                return 'Claude AI';
-
-            case 'CLAUDEAI-3.7':
-                if (model.includes('claude-3-5')) {
-                    return 'Claude 3.5 Sonnet';
-                } else if (model.includes('claude-2')) {
-                    return 'Claude 2';
-                } else if (model.includes('claude-3-7')){
-                    return 'Claude 3.7 Sonnet'
-                }
-                return 'Claude AI';
-
-
-            case 'SPOT':
-                return 'GPT-4o';
-
-            default:
-                return 'Assistente';
-        }
-    }
+    let ws = null;
+    let isConnected = false;
+    let assistantName = "Assistente";
+    let attachedFiles = [];
 
     function initialize() {
-        // Configurar o seletor de provedor LLM
-        llmProviderSelect.value = llmProvider;
-        handleProviderChange();
-
-        // Atualizar o assistantName
-        assistantName = getAssistantName(llmProvider, modelName);
-
-        // Carregar o tema do usuário
         loadUserTheme();
-
-        // Carregar a lista de chats
         loadChatList();
-
-        // Ajustar o contêiner do chat com base no estado inicial da barra lateral
-        if (sidebar.classList.contains('hidden')) {
-            chatContainer.classList.add('full-width');
-            toggleSidebarButton.innerHTML = '<i class="fas fa-bars"></i>';
-            toggleSidebarButton.setAttribute('aria-label', 'Mostrar barra lateral');
-        } else {
-            chatContainer.classList.remove('full-width');
-            toggleSidebarButton.innerHTML = '<i class="fas fa-times"></i>';
-            toggleSidebarButton.setAttribute('aria-label', 'Ocultar barra lateral');
-        }
-
-        // Selecionar o chat atual ou criar um novo
         const storedCurrentChat = localStorage.getItem('currentChatID');
-        if (storedCurrentChat && isChatExists(storedCurrentChat)) {
-            currentChatID = storedCurrentChat;
-            loadChatHistory();
-        } else {
-            currentChatID = createNewChat();
-            loadChatHistory();
+        currentChatID = (storedCurrentChat && isChatExists(storedCurrentChat)) ? storedCurrentChat : createNewChat();
+
+        loadChatHistory();
+        updateAssistantName();
+        connectWebSocket();
+        addEventListeners();
+
+        setupMobileInteractions();
+        handleOrientationChange();
+        setupTouchOptimizations();
+        adjustTextareaHeight();
+
+        if (localStorage.getItem('sidebar') === 'hidden') {
+            document.body.classList.add('sidebar-hidden');
         }
 
-        // Event listeners
-        addEventListeners();
+        // Em mobile, iniciar com sidebar fechada
+        if (window.innerWidth <= 768) {
+            document.body.classList.add('sidebar-hidden');
+            localStorage.setItem('sidebar', 'hidden');
+        }
     }
-
-    // Inicialização
-    initialize();
 
     function addEventListeners() {
-        llmProviderSelect.addEventListener('change', handleProviderChange);
         chatForm.addEventListener('submit', handleFormSubmit);
-        userInput.addEventListener('keydown', handleUserInputKeyDown);
-        userInput.addEventListener('input', debounce(autoResizeTextarea, 50));
-        messagesDiv.addEventListener('scroll', throttle(handleMessagesScroll, 100));
+        userInput.addEventListener('input', autoResizeTextarea);
+        llmProviderSelect.addEventListener('change', updateAssistantName);
         newChatButton.addEventListener('click', handleNewChat);
-        toggleSidebarButton.addEventListener('click', toggleSidebar);
         toggleThemeButton.addEventListener('click', toggleTheme);
-        clearHistoryButton.addEventListener('click', clearChatHistory);
-        // Adiciona o listener para detectar quando o usuário faz scroll manualmente
-        messagesDiv.addEventListener('scroll', () => {
-            checkIfShouldAutoScroll();
-        });
+        toggleSidebarButton.addEventListener('click', toggleSidebar);
+        toggleSidebarHiddenButton.addEventListener('click', toggleSidebar);
+        uploadFileButton.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', handleFilesSelected);
+        clearHistoryButton.addEventListener('click', clearCurrentChatHistory);
     }
 
-    // Função para verificar se o usuário está perto do final do chat
-    function checkIfShouldAutoScroll() {
-        const threshold = 50; // Distância do final para ativar o autoscroll
-        const position = messagesDiv.scrollTop + messagesDiv.clientHeight;
-        const height = messagesDiv.scrollHeight;
-        shouldAutoScroll = height - position < threshold;  // Ativar autoscroll somente se o usuário estiver perto do final
+    function connectWebSocket() {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsURL = `${protocol}//${window.location.host}/ws`;
+        ws = new WebSocket(wsURL);
+
+        ws.onopen = () => { isConnected = true; console.log('WebSocket conectado.'); };
+        ws.onmessage = (event) => handleServerMessage(JSON.parse(event.data));
+        ws.onclose = () => { isConnected = false; console.log('WebSocket desconectado. Reconectando...'); setTimeout(connectWebSocket, 3000); };
+        ws.onerror = (error) => { console.error('Erro no WebSocket:', error); ws.close(); };
     }
 
-    function handleProviderChange() {
-        llmProvider = llmProviderSelect.value;
-        localStorage.setItem('llmProvider', llmProvider);
-
-        // Atualizar o modelo baseado no provedor
-        switch (llmProvider) {
-            case 'OPENAI':
-                modelName = openaiModel;
-                break;
-            case 'CLAUDEAI':
-                modelName = claudeModel;
-                break;
-            case 'CLAUDEAI-3.7':
-                modelName = claude37Model;
-                break;
-            case 'STACKSPOT':
-                modelName = stackspotModel;
-                break;
+    function handleServerMessage(data) {
+        removeLastMessageIfTyping();
+        if (data.status === 'completed') {
+            addMessageWithTypingEffect(assistantName, data.response, 'assistant-message', true, true);
+        } else if (data.status === 'error') {
+            addMessage('Erro', data.response, 'error-message', false, false);
         }
-
-        console.log('Provider changed to:', llmProvider);
-        console.log('Model selected:', modelName);
-
-        // Atualizar o nome do assistente
-        assistantName = getAssistantName(llmProvider, modelName);
-        console.log('Assistant name updated to:', assistantName);
-    }
-
-    function isChatExists(chatID) {
-        const chatList = JSON.parse(localStorage.getItem('chatList')) || [];
-        return chatList.some(chat => chat.id === chatID);
     }
 
     function handleFormSubmit(e) {
         e.preventDefault();
         const message = userInput.value.trim();
-        if (message) {
-            addMessage('Você', message, 'user-message', false, true);
-            sendMessageToServer(message);
-            userInput.value = '';
-            userInput.style.height = 'auto';
-            userInput.blur();
+        if (!message && attachedFiles.length === 0) return;
+        if (!isConnected) {
+            addMessage('Erro', 'Conexão perdida. Tentando reconectar...', 'error-message', false, false);
+            return;
         }
+
+        if (message) addMessage('Você', message, 'user-message', false, true);
+        if (attachedFiles.length > 0) addMessage('Sistema', `Enviando ${attachedFiles.length} arquivo(s) para análise...`, 'system-message', false, false);
+
+        sendMessageToServer(message);
+
+        userInput.value = '';
+        userInput.style.height = 'auto';
+        attachedFiles = [];
+        updateFilePreview();
     }
 
-    function triggerSubmitEvent() {
-        if (typeof Event === 'function') {
-            const event = new Event('submit', { cancelable: true });
-            chatForm.dispatchEvent(event);
+    function sendMessageToServer(message) {
+        const history = getConversationHistory();
+        const selectedOption = llmProviderSelect.options[llmProviderSelect.selectedIndex];
+        const provider = selectedOption.value;
+        const model = selectedOption.dataset.model || "";
+
+        ws.send(JSON.stringify({ provider, model, prompt: message, history, files: attachedFiles }));
+        addMessage(assistantName, '', 'assistant-message', false, false, true);
+    }
+
+    async function handleFilesSelected(event) {
+        const files = Array.from(event.target.files);
+        if (files.length === 0) return;
+
+        attachedFiles = [];
+        updateFilePreview();
+
+        const filePromises = files.map(file =>
+            new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = e => {
+                    attachedFiles.push({ name: file.webkitRelativePath || file.name, content: e.target.result });
+                    resolve();
+                };
+                reader.onerror = () => reject(new Error(`Erro ao ler o arquivo ${file.name}`));
+                reader.readAsText(file);
+            })
+        );
+
+        try {
+            await Promise.all(filePromises);
+            updateFilePreview();
+        } catch (error) {
+            addMessage('Erro', error.message, 'error-message', false, false);
+        }
+        fileInput.value = '';
+    }
+
+    function updateFilePreview() {
+        filePreviewContainer.innerHTML = '';
+        if (attachedFiles.length === 0) {
+            filePreviewContainer.style.display = 'none';
+            return;
+        }
+
+        filePreviewContainer.style.display = 'block';
+        const fileList = document.createElement('ul');
+        attachedFiles.forEach((file, index) => {
+            const listItem = document.createElement('li');
+            listItem.textContent = file.name;
+            const removeButton = document.createElement('button');
+            removeButton.innerHTML = '&times;';
+            removeButton.onclick = () => {
+                attachedFiles.splice(index, 1);
+                updateFilePreview();
+            };
+            listItem.appendChild(removeButton);
+            fileList.appendChild(listItem);
+        });
+        filePreviewContainer.appendChild(fileList);
+    }
+
+    function clearCurrentChatHistory() {
+        if (!currentChatID || !confirm("Tem certeza que deseja limpar o histórico desta conversa?")) return;
+        localStorage.setItem(currentChatID, '[]');
+        loadChatHistory();
+    }
+
+    function getConversationHistory() {
+        const history = JSON.parse(localStorage.getItem(currentChatID)) || [];
+        return history.slice(-10).map(msg => ({
+            role: msg.sender === 'Você' ? 'user' : 'assistant',
+            content: msg.text,
+        }));
+    }
+
+    function updateAssistantName() {
+        assistantName = llmProviderSelect.options[llmProviderSelect.selectedIndex].text;
+    }
+
+    function addMessage(sender, text, messageClass, isMarkdown = false, save = false, isTyping = false) {
+        const messageElement = document.createElement('div');
+        messageElement.classList.add('message', messageClass);
+        const contentElement = document.createElement('div');
+        contentElement.classList.add('message-content');
+
+        if (isTyping) {
+            contentElement.innerHTML = `<strong>${sender}:</strong> <span class="typing-indicator"><span></span><span></span><span></span></span>`;
+            messageElement.classList.add('typing');
         } else {
-            const event = document.createEvent('Event');
-            event.initEvent('submit', true, true);
-            chatForm.dispatchEvent(event);
+            const cleanHtml = isMarkdown ? DOMPurify.sanitize(marked.parse(text)) : DOMPurify.sanitize(text.replace(/</g, "&lt;").replace(/>/g, "&gt;"));
+            contentElement.innerHTML = `<strong>${sender}:</strong> ${cleanHtml}`;
         }
-    }
 
-    function handleUserInputKeyDown(e) {
-        if (e.key === 'Enter') {
-            if (!e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                e.preventDefault();
-                triggerSubmitEvent();
-            }
+        messageElement.appendChild(contentElement);
+        messagesDiv.appendChild(messageElement);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+        if (save) saveMessage(sender, text, isMarkdown);
+        if (isMarkdown && !isTyping) {
+            messageElement.querySelectorAll('pre code').forEach(hljs.highlightElement);
         }
+        return contentElement;
     }
 
-    function autoResizeTextarea() {
-        this.style.height = 'auto';
-        this.style.height = `${this.scrollHeight}px`;
+    function addMessageWithTypingEffect(sender, text, messageClass, isMarkdown, save) {
+        const contentElement = addMessage(sender, '', messageClass, isMarkdown, false, false);
+        typeWriterEffect(contentElement, sender, text, isMarkdown, () => {
+            if (save) saveMessage(sender, text, isMarkdown);
+            contentElement.querySelectorAll('pre code').forEach(hljs.highlightElement);
+        });
     }
 
-    function debounce(fn, delay) {
-        let timeoutID;
-        return function (...args) {
-            clearTimeout(timeoutID);
-            timeoutID = setTimeout(() => fn.apply(this, args), delay);
-        };
-    }
+    function typeWriterEffect(element, sender, text, isMarkdown, onComplete) {
+        let i = 0;
+        const speed = 5; // Mais rápido
 
-    function handleMessagesScroll() {
-        if (messagesDiv.scrollHeight - messagesDiv.scrollTop <= messagesDiv.clientHeight + 50) {
-            shouldAutoScroll = true;
-        } else {
-            shouldAutoScroll = false;
-        }
-    }
+        element.innerHTML = `<strong>${sender}:</strong> `;
+        const textContainer = document.createElement('span');
+        element.appendChild(textContainer);
 
-    function throttle(func, limit) {
-        let lastFunc;
-        let lastRan;
-        return function (...args) {
-            const context = this;
-            if (!lastRan) {
-                func.apply(context, args);
-                lastRan = Date.now();
+        function type() {
+            if (i < text.length) {
+                const char = text.charAt(i);
+                i++;
+                textContainer.textContent += char;
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                setTimeout(type, speed);
             } else {
-                clearTimeout(lastFunc);
-                lastFunc = setTimeout(function () {
-                    if ((Date.now() - lastRan) >= limit) {
-                        func.apply(context, args);
-                        lastRan = Date.now();
-                    }
-                }, limit - (Date.now() - lastRan));
+                // Ao final, renderiza o Markdown completo de uma vez para garantir a formatação correta
+                const finalHtml = isMarkdown ? DOMPurify.sanitize(marked.parse(text)) : DOMPurify.sanitize(text);
+                element.innerHTML = `<strong>${sender}:</strong> ${finalHtml}`;
+                if (onComplete) onComplete();
             }
-        };
+        }
+        type();
+    }
+
+    function removeLastMessageIfTyping() {
+        const typingMessage = messagesDiv.querySelector('.message.typing');
+        if (typingMessage) messagesDiv.removeChild(typingMessage);
+    }
+
+    function saveMessage(sender, text, isMarkdown) {
+        if (!currentChatID) return;
+        const history = JSON.parse(localStorage.getItem(currentChatID)) || [];
+        history.push({ sender, text, isMarkdown });
+        localStorage.setItem(currentChatID, JSON.stringify(history));
+    }
+
+    function loadChatHistory() {
+        messagesDiv.innerHTML = '';
+        const history = JSON.parse(localStorage.getItem(currentChatID)) || [];
+        history.forEach(msg => {
+            const messageClass = msg.sender === 'Você' ? 'user-message' : (msg.sender === 'Sistema' ? 'system-message' : 'assistant-message');
+            addMessage(msg.sender, msg.text, messageClass, msg.isMarkdown, false);
+        });
+        localStorage.setItem('currentChatID', currentChatID);
+        loadChatList();
     }
 
     function handleNewChat() {
@@ -276,402 +267,167 @@ document.addEventListener('DOMContentLoaded', () => {
         loadChatHistory();
     }
 
-    function toggleSidebar() {
-        if (sidebar.classList.contains('hidden')) {
-            sidebar.classList.remove('hidden');
-        } else {
-            sidebar.classList.add('hidden');
-        }
-    }
-
-
-    function addMessage(sender, text, messageClass, isMarkdown = false, save = true, isTyping = false) {
-        const messageElement = document.createElement('div');
-        messageElement.classList.add('message', messageClass);
-
-        const contentElement = document.createElement('div');
-        contentElement.classList.add('message-content');
-
-        if (isTyping) {
-            contentElement.innerHTML = `<strong>${sender}:</strong> <span class="typing-indicator"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>`;
-        } else {
-            if (isMarkdown) {
-                const rawHtml = marked.parse(text);
-                const cleanHtml = DOMPurify.sanitize(rawHtml);
-                contentElement.innerHTML = `<strong>${sender}:</strong> ${cleanHtml}`;
-
-                // Aplicar syntax highlighting se for necessário
-                hljs.highlightAll();
-            } else {
-                const cleanHtml = DOMPurify.sanitize(text);
-                contentElement.innerHTML = `<strong>${sender}:</strong> ${cleanHtml}`;
-            }
-        }
-
-        messageElement.appendChild(contentElement);
-        messagesDiv.appendChild(messageElement);
-
-        if (shouldAutoScroll) {
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        }
-
-        if (save) {
-            saveMessage(sender, text, isMarkdown);  // Salvar a mensagem no localStorage (tanto para o usuário quanto para a assistente)
-        }
-    }
-
-    function elementHighlight() {
-        if (typeof hljs !== 'undefined') {
-            hljs.highlightAll();
-        }
-    }
-
-    async function sendMessageToServer(message) {
-        try {
-            const conversationHistory = getConversationHistory();
-
-            // Adicionar indicador de digitação
-            addMessage(assistantName, '', 'assistant-message', false, false, true);
-
-            const response = await fetch('/send', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    provider: llmProvider,
-                    model: modelName,
-                    prompt: message,
-                    history: conversationHistory,
-                    session_id: sessionId  // Adicionar o session_id no corpo da requisição
-                })
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(errorText);
-            }
-
-            const data = await response.json();
-            const messageID = data.message_id;
-
-            // Iniciar o polling para obter a resposta
-            pollForResponse(messageID);
-        } catch (error) {
-            console.error("Erro ao enviar mensagem:", error);
-            removeLastMessage();
-            addMessage('Erro', 'Ocorreu um erro ao enviar a mensagem. Por favor, tente novamente. ' + error, 'assistant-message', false, true);
-        }
-    }
-
-    async function pollForResponse(messageID) {
-        try {
-            // Obter o session_id do localStorage
-            const sessionId = localStorage.getItem('session_id');
-            if (!sessionId) {
-                throw new Error('session_id não encontrado no localStorage');
-            }
-
-            // Chamar o servidor para obter a resposta
-            const response = await fetch(`/get-response?message_id=${messageID}&session_id=${sessionId}`);
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(errorText);
-            }
-
-            const data = await response.json();
-
-            if (data.status === 'completed') {
-                removeLastMessage(); // Remover o indicador de "pensando"
-
-                // Criar o contêiner da mensagem da assistente
-                const assistantMessageElement = document.createElement('div');
-                assistantMessageElement.classList.add('message', 'assistant-message'); // Adicionar a classe da assistente
-
-                // Criar o conteúdo da mensagem com o nome da assistente
-                const contentElement = document.createElement('div');
-                contentElement.classList.add('message-content');
-                contentElement.innerHTML = `<strong>${assistantName}:</strong> `; // Nome da assistente já inserido
-
-                assistantMessageElement.appendChild(contentElement);
-                messagesDiv.appendChild(assistantMessageElement);
-
-                // Iniciar a transcrição da resposta da LLM com formatação
-                transcribeText(contentElement, data.response, 50);  // Transcrever o texto com o efeito de digitação, aplicando na "contentElement"
-
-                // Salvar a mensagem da IA no localStorage
-                saveMessage(assistantName, data.response, true);  // Salva a mensagem da IA
-            } else if (data.status === 'processing') {
-                setTimeout(() => {
-                    pollForResponse(messageID);
-                }, 1000);
-            } else if (data.status === 'error') {
-                removeLastMessage();
-                addMessage('Erro', data.message, 'assistant-message', false, true);
-            }
-        } catch (error) {
-            console.error("Erro ao obter a resposta:", error);
-            removeLastMessage();
-            addMessage('Erro', 'Ocorreu um erro ao obter a resposta. Por favor, tente novamente. ' + error, 'assistant-message', false, true);
-        }
-    }
-
-    function getConversationHistory() {
-        if (!currentChatID) {
-            console.error("currentChatID não está definido.");
-            return [];
-        }
-
-        const history = JSON.parse(localStorage.getItem(currentChatID)) || [];
-        const conversation = [];
-
-        history.forEach(msg => {
-            if (msg.sender === 'Você') {
-                conversation.push({ role: 'user', content: msg.text });
-            } else if (msg.sender === assistantName) {
-                conversation.push({ role: 'assistant', content: msg.text });
-            }
-        });
-
-        return conversation;
-    }
-
-    function removeLastMessage() {
-        const messages = messagesDiv.getElementsByClassName('message');
-        if (messages.length > 0) {
-            messagesDiv.removeChild(messages[messages.length - 1]);
-        }
-    }
-
-    function saveMessage(sender, text, isMarkdown) {
-        if (!currentChatID) {
-            console.error("currentChatID não está definido.");
-            return;
-        }
-
-        // Carregar o histórico atual do localStorage
-        const history = JSON.parse(localStorage.getItem(currentChatID)) || [];
-
-        // Adicionar a nova mensagem ao histórico
-        history.push({ sender, text, isMarkdown });
-
-        // Salvar o histórico atualizado de volta no localStorage
-        localStorage.setItem(currentChatID, JSON.stringify(history));
-    }
-
-    function loadChatHistory() {
-        messagesDiv.innerHTML = ''; // Limpar o container de mensagens
-
-        // Carregar o histórico do chat atual do localStorage
-        const history = JSON.parse(localStorage.getItem(currentChatID)) || [];
-
-        // Reexibir cada mensagem do histórico
-        history.forEach(msg => {
-            const messageClass = msg.sender === 'Você' ? 'user-message' : 'assistant-message';
-            addMessage(msg.sender, msg.text, messageClass, msg.isMarkdown, false); // Reexibir a mensagem sem salvar novamente
-        });
-
-        // Salvar o chat atual no localStorage
-        localStorage.setItem('currentChatID', currentChatID);
-
-        // Aplicar o highlight em mensagens de código
-        hljs.highlightAll();
-    }
-
-
-    function clearChatHistory() {
-        if (!currentChatID) return;
-        localStorage.removeItem(currentChatID);
-        messagesDiv.innerHTML = '';
+    function createNewChat() {
+        const newChatID = `chat_${Date.now()}`;
+        const chatList = JSON.parse(localStorage.getItem('chatList')) || [];
+        chatList.push({ id: newChatID, name: `Conversa ${chatList.length + 1}` });
+        localStorage.setItem('chatList', JSON.stringify(chatList));
+        localStorage.setItem(newChatID, '[]');
+        return newChatID;
     }
 
     function loadChatList() {
         chatListDiv.innerHTML = '';
         const chatList = JSON.parse(localStorage.getItem('chatList')) || [];
-        chatList.forEach((chat, index) => {
+        chatList.forEach((chat) => {
             const chatItem = document.createElement('div');
             chatItem.classList.add('chat-item');
+            chatItem.dataset.id = chat.id;
+            if (chat.id === currentChatID) chatItem.classList.add('active');
 
             const chatNameSpan = document.createElement('span');
-            chatNameSpan.classList.add('chat-name');
-            chatNameSpan.textContent = chat.name || `Conversa ${index + 1}`;
+            chatNameSpan.className = 'chat-name';
+            chatNameSpan.textContent = chat.name;
 
             const chatActionsDiv = document.createElement('div');
-            chatActionsDiv.classList.add('chat-actions');
+            chatActionsDiv.className = 'chat-actions';
 
-            const editButton = document.createElement('button');
-            editButton.innerHTML = '<i class="fas fa-edit"></i>';
-            editButton.title = 'Renomear conversa';
-
-            editButton.addEventListener('click', function (e) {
-                e.stopPropagation();
-                const newName = prompt("Digite o novo nome para a conversa:", chat.name || `Conversa ${index + 1}`);
-                if (newName) {
-                    renameChat(chat.id, newName);
-                }
-            });
+            const renameButton = document.createElement('button');
+            renameButton.innerHTML = '<i class="fas fa-edit"></i>';
+            renameButton.onclick = (e) => { e.stopPropagation(); renameChat(chat.id, chat.name); };
 
             const deleteButton = document.createElement('button');
             deleteButton.innerHTML = '<i class="fas fa-trash"></i>';
-            deleteButton.title = 'Apagar conversa';
+            deleteButton.onclick = (e) => { e.stopPropagation(); deleteChat(chat.id, chat.name); };
 
-            deleteButton.addEventListener('click', function (e) {
-                e.stopPropagation();
-                const confirmDelete = confirm(`Tem certeza que deseja apagar a conversa "${chat.name || `Conversa ${index + 1}`}"?`);
-                if (confirmDelete) {
-                    deleteChat(chat.id);
-                }
-            });
-
-            chatActionsDiv.appendChild(editButton);
+            chatActionsDiv.appendChild(renameButton);
             chatActionsDiv.appendChild(deleteButton);
 
             chatItem.appendChild(chatNameSpan);
             chatItem.appendChild(chatActionsDiv);
 
-            chatItem.dataset.id = chat.id;
-            chatItem.addEventListener('click', function () {
-                currentChatID = chat.id;
-                loadChatHistory();
-            });
-
+            chatItem.addEventListener('click', () => { currentChatID = chat.id; loadChatHistory(); });
             chatListDiv.appendChild(chatItem);
         });
     }
 
-    function renameChat(chatID, newName) {
-        const chatList = JSON.parse(localStorage.getItem('chatList')) || [];
-        const chat = chatList.find(c => c.id === chatID);
-        if (chat) {
-            chat.name = newName;
+    function renameChat(chatID, currentName) {
+        const newName = prompt("Novo nome:", currentName);
+        if (newName && newName.trim()) {
+            const chatList = JSON.parse(localStorage.getItem('chatList'));
+            const chat = chatList.find(c => c.id === chatID);
+            if (chat) {
+                chat.name = newName.trim();
+                localStorage.setItem('chatList', JSON.stringify(chatList));
+                loadChatList();
+            }
+        }
+    }
+
+    function deleteChat(chatID, chatName) {
+        if (confirm(`Deletar "${chatName}"?`)) {
+            let chatList = (JSON.parse(localStorage.getItem('chatList')) || []).filter(c => c.id !== chatID);
             localStorage.setItem('chatList', JSON.stringify(chatList));
-            loadChatList();
-        } else {
-            console.error(`Chat com ID ${chatID} não encontrado.`);
-        }
-    }
-
-    function deleteChat(chatID) {
-        let chatList = JSON.parse(localStorage.getItem('chatList')) || [];
-        chatList = chatList.filter(chat => chat.id !== chatID);
-        localStorage.setItem('chatList', JSON.stringify(chatList));
-        localStorage.removeItem(chatID);
-
-        loadChatList();
-
-        if (currentChatID === chatID) {
-            if (chatList.length > 0) {
-                currentChatID = chatList[0].id;
+            localStorage.removeItem(chatID);
+            if (currentChatID === chatID) {
+                currentChatID = (chatList.length > 0) ? chatList[0].id : createNewChat();
                 loadChatHistory();
             } else {
-                currentChatID = createNewChat();
-                loadChatHistory();
+                loadChatList();
             }
         }
     }
 
-// Função para fazer transcrição de texto com scroll suave
-    function transcribeText(element, text, delay = 2, charsPerTick = 10) {
-        let index = 0;
-        let currentText = '';
-
-        function typeCharacter() {
-            if (index < text.length) {
-                // Adicionar múltiplos caracteres por vez
-                currentText += text.slice(index, index + charsPerTick);
-                const sanitizedHTML = DOMPurify.sanitize(marked.parse(currentText));
-                element.innerHTML = `<strong>${assistantName}:</strong> ${sanitizedHTML}`;
-                index += charsPerTick;
-
-                // Somente fazer o scroll se o autoscroll estiver ativo
-                if (shouldAutoScroll) {
-                    messagesDiv.scrollTo({
-                        top: messagesDiv.scrollHeight,
-                        behavior: 'smooth',  // Faz o scroll suave
-                    });
-                }
-
-                setTimeout(typeCharacter, delay);  // Delay ajustado
-            } else {
-                hljs.highlightAll();  // Aplicar highlight quando o texto estiver completo
-            }
-        }
-
-        typeCharacter();
+    function isChatExists(chatID) {
+        return (JSON.parse(localStorage.getItem('chatList')) || []).some(c => c.id === chatID);
     }
 
-// Função para verificar se o usuário está no final da área de mensagens
-    function checkIfShouldAutoScroll() {
-        const threshold = 50;  // Distância do final para ativar o autoscroll
-        const position = messagesDiv.scrollTop + messagesDiv.clientHeight;
-        const height = messagesDiv.scrollHeight;
-        shouldAutoScroll = height - position < threshold;  // Ativar autoscroll somente se o usuário estiver perto do final
-    }
-
-
-    function createNewChat() {
-        const newChatID = generateUUID();
-        const chatList = JSON.parse(localStorage.getItem('chatList')) || [];
-
-        const chatName = `Conversa ${chatList.length + 1}`;
-
-        chatList.push({ id: newChatID, name: chatName });
-        localStorage.setItem('chatList', JSON.stringify(chatList));
-        localStorage.setItem('currentChatID', newChatID);
-        loadChatList();
-        return newChatID;
+    function toggleSidebar() {
+        document.body.classList.toggle('sidebar-hidden');
+        localStorage.setItem('sidebar', document.body.classList.contains('sidebar-hidden') ? 'hidden' : 'visible');
     }
 
     function toggleTheme() {
         document.body.classList.toggle('dark-mode');
-
-        highlightStyleLink.onload = function() {
-            hljs.highlightAll();
-        };
-
-        const isDarkMode = document.body.classList.contains('dark-mode');
-
-        if (isDarkMode) {
-            toggleThemeButton.innerHTML = '<i class="fas fa-sun"></i>';
-            toggleThemeButton.setAttribute('aria-label', 'Ativar modo Light');
-            toggleThemeButtonHidden.innerHTML = '<i class="fas fa-sun"></i>';  // Atualiza o ícone fora da barra lateral
-            toggleThemeButtonHidden.setAttribute('aria-label', 'Ativar modo Light');
-            localStorage.setItem('theme', 'dark');
-            highlightStyleLink.href = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/monokai.min.css";
-        } else {
-            toggleThemeButton.innerHTML = '<i class="fas fa-moon"></i>';
-            toggleThemeButton.setAttribute('aria-label', 'Ativar modo Dark');
-            toggleThemeButtonHidden.innerHTML = '<i class="fas fa-moon"></i>';  // Atualiza o ícone fora da barra lateral
-            toggleThemeButtonHidden.setAttribute('aria-label', 'Ativar modo Dark');
-            localStorage.setItem('theme', 'light');
-            highlightStyleLink.href = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/monokai.min.css";
-        }
+        const theme = document.body.classList.contains('dark-mode') ? 'dark' : 'light';
+        localStorage.setItem('theme', theme);
+        const themeIcon = document.querySelector('#toggle-theme i');
+        themeIcon.className = theme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
     }
 
     function loadUserTheme() {
-        let savedTheme = localStorage.getItem('theme');
-        if (!savedTheme){
-            savedTheme = 'dark';
-            localStorage.setItem('theme', 'dark');
-        }
-        const isDarkMode = savedTheme === 'dark';
-
-        highlightStyleLink.onload = function() {
-            hljs.highlightAll();
-        };
-
-        if (isDarkMode) {
+        const theme = localStorage.getItem('theme') || 'dark';
+        const themeIcon = document.querySelector('#toggle-theme i');
+        if (theme === 'dark') {
             document.body.classList.add('dark-mode');
-            toggleThemeButton.innerHTML = '<i class="fas fa-sun"></i>';
-            toggleThemeButton.setAttribute('aria-label', 'Ativar modo Light');
-            toggleThemeButtonHidden.innerHTML = '<i class="fas fa-sun"></i>';  // Também atualizar fora da barra lateral
-            toggleThemeButtonHidden.setAttribute('aria-label', 'Ativar modo Light');
-            highlightStyleLink.href = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/monokai.min.css";
+            themeIcon.className = 'fas fa-sun';
         } else {
-            document.body.classList.remove('dark-mode');
-            toggleThemeButton.innerHTML = '<i class="fas fa-moon"></i>';
-            toggleThemeButton.setAttribute('aria-label', 'Ativar modo Dark');
-            toggleThemeButtonHidden.innerHTML = '<i class="fas fa-moon"></i>';  // Também atualizar fora da barra lateral
-            toggleThemeButtonHidden.setAttribute('aria-label', 'Ativar modo Dark');
-            highlightStyleLink.href = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/monokai.min.css";
+            themeIcon.className = 'fas fa-moon';
         }
     }
+
+    function setupMobileInteractions() {
+        // Fechar sidebar ao clicar no overlay (mobile)
+        if (window.innerWidth <= 768) {
+            document.addEventListener('click', (e) => {
+                const sidebar = document.getElementById('sidebar');
+                const toggleBtn = document.getElementById('toggle-sidebar-hidden');
+
+                if (!document.body.classList.contains('sidebar-hidden') &&
+                    !sidebar.contains(e.target) &&
+                    !toggleBtn.contains(e.target)) {
+                    document.body.classList.add('sidebar-hidden');
+                    localStorage.setItem('sidebar', 'hidden');
+                }
+            });
+        }
+
+        // Prevenir zoom duplo no iOS
+        let lastTouchEnd = 0;
+        document.addEventListener('touchend', (e) => {
+            const now = Date.now();
+            if (now - lastTouchEnd <= 300) {
+                e.preventDefault();
+            }
+            lastTouchEnd = now;
+        }, false);
+
+        // Auto-scroll mais suave em mobile
+        if ('ontouchstart' in window) {
+            messagesDiv.style.scrollBehavior = 'smooth';
+        }
+    }
+
+    function handleOrientationChange() {
+        // Ajustar layout quando o dispositivo roda
+        window.addEventListener('orientationchange', () => {
+            setTimeout(() => {
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                adjustTextareaHeight();
+            }, 300);
+        });
+    }
+
+    function adjustTextareaHeight() {
+        const maxHeight = window.innerHeight * 0.3; // 30% da altura da tela
+        userInput.style.maxHeight = `${maxHeight}px`;
+    }
+
+    function setupTouchOptimizations() {
+        // Melhorar performance de scroll em mobile
+        messagesDiv.style.webkitOverflowScrolling = 'touch';
+
+        // Prevenir pull-to-refresh em alguns navegadores
+        document.body.style.overscrollBehavior = 'contain';
+    }
+
+    // Atualizar a função autoResizeTextarea
+    function autoResizeTextarea() {
+        this.style.height = 'auto';
+        const maxHeight = window.innerWidth <= 768 ?
+            window.innerHeight * 0.25 : 200;
+        this.style.height = `${Math.min(this.scrollHeight, maxHeight)}px`;
+    }
+
+    initialize();
 });
