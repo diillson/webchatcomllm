@@ -1,18 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // === DETECÇÃO DE BROWSER PARA WEBSOCKET ===
-    const detectBrowser = () => {
-        const ua = navigator.userAgent.toLowerCase();
-        if (ua.indexOf('firefox') > -1) return 'firefox';
-        if (ua.indexOf('edg') > -1) return 'edge';
-        if (ua.indexOf('brave') > -1 || navigator.brave) return 'brave';
-        if (ua.indexOf('chrome') > -1) return 'chrome';
-        if (ua.indexOf('safari') > -1 && ua.indexOf('chrome') === -1) return 'safari';
-        return 'unknown';
-    };
-
-    const browser = detectBrowser();
-    console.log('🌐 Browser detectado:', browser);
-
+    // ============================================
+    // ELEMENTOS DO DOM
+    // ============================================
     const chatListDiv = document.getElementById('chat-list');
     const chatForm = document.getElementById('chat-form');
     const userInput = document.getElementById('user-input');
@@ -29,7 +18,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const filePreviewContainer = document.getElementById('file-preview-container');
     const clearHistoryButton = document.getElementById('clear-history-button');
 
-    // --- Estado da Aplicação ---
+    // ============================================
+    // ESTADO DA APLICAÇÃO
+    // ============================================
     let currentChatID = null;
     let ws = null;
     let isConnected = false;
@@ -37,40 +28,53 @@ document.addEventListener('DOMContentLoaded', () => {
     let attachedFiles = [];
     let processingFiles = false;
 
+    // CORREÇÃO FIREFOX: Mapeamento de provedores
+    const providerMap = new Map();
+
+    // Detecção de browser
+    const detectBrowser = () => {
+        const ua = navigator.userAgent.toLowerCase();
+        if (ua.indexOf('firefox') > -1) return 'firefox';
+        if (ua.indexOf('edg') > -1) return 'edge';
+        if (ua.indexOf('brave') > -1 || navigator.brave) return 'brave';
+        if (ua.indexOf('chrome') > -1) return 'chrome';
+        if (ua.indexOf('safari') > -1 && ua.indexOf('chrome') === -1) return 'safari';
+        return 'unknown';
+    };
+
+    const browser = detectBrowser();
+    console.log('🌐 Browser detectado:', browser);
+
     // Tipos de arquivo suportados
     const SUPPORTED_TYPES = {
-        // Imagens
         image: {
             extensions: ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', '.ico'],
             mimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'image/webp', 'image/svg+xml'],
-            maxSize: 10 * 1024 * 1024, // 10MB
+            maxSize: 10 * 1024 * 1024,
             icon: '🖼️',
             color: '#4CAF50'
         },
-        // PDFs
         pdf: {
             extensions: ['.pdf'],
             mimeTypes: ['application/pdf'],
-            maxSize: 25 * 1024 * 1024, // 25MB
+            maxSize: 25 * 1024 * 1024,
             icon: '📕',
             color: '#F44336'
         },
-        // Documentos Office
         docx: {
             extensions: ['.docx'],
             mimeTypes: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
-            maxSize: 15 * 1024 * 1024, // 15MB
+            maxSize: 15 * 1024 * 1024,
             icon: '📘',
             color: '#2196F3'
         },
         xlsx: {
             extensions: ['.xlsx'],
             mimeTypes: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
-            maxSize: 15 * 1024 * 1024, // 15MB
+            maxSize: 15 * 1024 * 1024,
             icon: '📊',
             color: '#4CAF50'
         },
-        // Código e texto
         code: {
             extensions: ['.js', '.ts', '.py', '.go', '.java', '.c', '.cpp', '.h', '.cs', '.rb', '.php', '.html', '.css', '.scss', '.sass'],
             maxSize: 5 * 1024 * 1024,
@@ -97,17 +101,130 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    const MAX_TOTAL_SIZE = 50 * 1024 * 1024; // 50MB
+    const MAX_TOTAL_SIZE = 50 * 1024 * 1024;
     const MAX_FILES = 50;
 
+    // ============================================
+    // INICIALIZAÇÃO DO MAPA DE PROVEDORES
+    // ============================================
+    function initializeProviderMap() {
+        if (!llmProviderSelect) {
+            console.error('❌ Select de provedor não encontrado');
+            return;
+        }
+
+        providerMap.clear();
+        const options = llmProviderSelect.querySelectorAll('option');
+
+        options.forEach((option, index) => {
+            const value = option.value;
+            const text = option.textContent || option.innerText;
+            const model = option.getAttribute('data-model') || '';
+
+            providerMap.set(index, {
+                value: value,
+                text: text,
+                model: model
+            });
+
+            console.log(`📌 Provedor ${index}:`, { value, text, model });
+        });
+
+        console.log('✅ Mapa de provedores inicializado:', providerMap.size, 'provedores');
+    }
+
+    // ============================================
+    // OBTER PROVEDOR SELECIONADO
+    // ============================================
+    function getSelectedProvider() {
+        if (!llmProviderSelect) {
+            console.error('❌ Select não encontrado');
+            return null;
+        }
+
+        const selectedIndex = llmProviderSelect.selectedIndex;
+
+        if (selectedIndex === -1) {
+            console.warn('⚠️ Nenhum índice selecionado');
+            return null;
+        }
+
+        const fromMap = providerMap.get(selectedIndex);
+        if (fromMap) {
+            console.log('✅ Provedor do mapa:', fromMap);
+            return fromMap;
+        }
+
+        const selectedOption = llmProviderSelect.options[selectedIndex];
+        if (!selectedOption) {
+            console.error('❌ Opção não encontrada no índice', selectedIndex);
+            return null;
+        }
+
+        const provider = {
+            value: selectedOption.value,
+            text: selectedOption.textContent || selectedOption.innerText,
+            model: selectedOption.getAttribute('data-model') || ''
+        };
+
+        console.log('✅ Provedor direto da option:', provider);
+        return provider;
+    }
+
+    // ============================================
+    // GARANTIR PROVEDOR SELECIONADO
+    // ============================================
+    function ensureProviderSelected() {
+        if (!llmProviderSelect) {
+            console.error('❌ Select de provedor não encontrado');
+            return;
+        }
+
+        if (llmProviderSelect.selectedIndex === -1) {
+            console.log('⚠️ Nenhum provedor selecionado, selecionando o primeiro');
+            llmProviderSelect.selectedIndex = 0;
+        }
+
+        const event = new Event('change', { bubbles: true });
+        llmProviderSelect.dispatchEvent(event);
+
+        const provider = getSelectedProvider();
+        if (provider) {
+            console.log('✅ Provedor garantido:', provider);
+            localStorage.setItem('selectedProviderIndex', llmProviderSelect.selectedIndex);
+        }
+    }
+
+    // ============================================
+    // ATUALIZAR NOME DO ASSISTENTE
+    // ============================================
+    function updateAssistantName() {
+        const provider = getSelectedProvider();
+        if (provider && provider.text) {
+            assistantName = provider.text;
+            console.log('🤖 Assistente atualizado:', assistantName);
+        } else {
+            assistantName = "Assistente";
+            console.warn('⚠️ Não foi possível obter nome do provedor');
+        }
+    }
+
+    // ============================================
+    // INICIALIZAÇÃO
+    // ============================================
     function initialize() {
         loadUserTheme();
         loadChatList();
+
         const storedCurrentChat = localStorage.getItem('currentChatID');
         currentChatID = (storedCurrentChat && isChatExists(storedCurrentChat)) ? storedCurrentChat : createNewChat();
 
         loadChatHistory();
+
+        initializeProviderMap();
+        ensureProviderSelected();
         updateAssistantName();
+
         connectWebSocket();
         addEventListeners();
 
@@ -115,7 +232,6 @@ document.addEventListener('DOMContentLoaded', () => {
         handleOrientationChange();
         setupTouchOptimizations();
         adjustTextareaHeight();
-
         addCopyButtonsToCode();
 
         if (localStorage.getItem('sidebar') === 'hidden') {
@@ -128,10 +244,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // ============================================
+    // EVENT LISTENERS
+    // ============================================
     function addEventListeners() {
         chatForm.addEventListener('submit', handleFormSubmit);
         userInput.addEventListener('input', autoResizeTextarea);
-        llmProviderSelect.addEventListener('change', updateAssistantName);
+
+        if (llmProviderSelect) {
+            llmProviderSelect.addEventListener('change', (e) => {
+                console.log('🔄 Provedor mudou (change event)');
+                updateAssistantName();
+            });
+
+            llmProviderSelect.addEventListener('click', (e) => {
+                console.log('🖱️ Provedor clicado (click event)');
+            });
+
+            llmProviderSelect.addEventListener('input', (e) => {
+                console.log('⌨️ Provedor input (input event)');
+                updateAssistantName();
+            });
+        }
+
         newChatButton.addEventListener('click', handleNewChat);
         toggleThemeButton.addEventListener('click', toggleTheme);
         toggleSidebarButton.addEventListener('click', toggleSidebar);
@@ -145,59 +280,106 @@ document.addEventListener('DOMContentLoaded', () => {
 
         clearHistoryButton.addEventListener('click', clearCurrentChatHistory);
 
-        // Drag and drop
         setupDragAndDrop();
     }
 
+    // ============================================
+    // WEBSOCKET
+    // ============================================
     function connectWebSocket() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsURL = `${protocol}//${window.location.host}/ws`;
 
         console.log('🔌 Tentando conectar WebSocket:', wsURL);
 
-        // CORREÇÃO: Configuração específica por browser
-        if (browser === 'firefox') {
-            // Firefox precisa de configurações específicas
-            ws = new WebSocket(wsURL, ['chat']);
-        } else {
-            ws = new WebSocket(wsURL);
-        }
-
-        ws.onopen = () => {
-            isConnected = true;
-            console.log('✅ WebSocket conectado com sucesso');
-            updateConnectionStatus(true);
-        };
-
-        ws.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                handleServerMessage(data);
-            } catch (error) {
-                console.error('❌ Erro ao processar mensagem:', error);
+        try {
+            if (browser === 'firefox') {
+                ws = new WebSocket(wsURL, ['chat']);
+            } else {
+                ws = new WebSocket(wsURL);
             }
-        };
 
-        ws.onclose = (event) => {
-            isConnected = false;
-            console.log('🔌 WebSocket desconectado. Código:', event.code, 'Razão:', event.reason);
-            updateConnectionStatus(false);
+            let connectionTimeout = setTimeout(() => {
+                if (!isConnected) {
+                    console.warn('⚠️ WebSocket não conectou em 5 segundos');
+                    ws.close();
+                }
+            }, 5000);
 
-            // Reconecta após 3 segundos
+            ws.onopen = () => {
+                clearTimeout(connectionTimeout);
+                isConnected = true;
+                console.log('✅ WebSocket conectado com sucesso');
+                updateConnectionStatus(true);
+
+                if (browser === 'firefox') {
+                    ws.send(JSON.stringify({ type: 'ping' }));
+                }
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+
+                    if (data.type === 'ping' || data.type === 'pong') {
+                        return;
+                    }
+
+                    handleServerMessage(data);
+                } catch (error) {
+                    console.error('❌ Erro ao processar mensagem:', error);
+                    console.error('Dados recebidos:', event.data);
+                }
+            };
+
+            ws.onclose = (event) => {
+                clearTimeout(connectionTimeout);
+                isConnected = false;
+                console.log('🔌 WebSocket desconectado');
+                console.log('   Código:', event.code);
+                console.log('   Razão:', event.reason);
+                console.log('   Clean:', event.wasClean);
+
+                updateConnectionStatus(false);
+
+                if (event.wasClean && event.code === 1000) {
+                    console.log('✅ Fechamento normal, não reconecta');
+                    return;
+                }
+
+                setTimeout(() => {
+                    console.log('🔄 Tentando reconectar...');
+                    connectWebSocket();
+                }, 3000);
+            };
+
+            ws.onerror = (error) => {
+                console.error('❌ Erro no WebSocket:', error);
+                updateConnectionStatus(false);
+            };
+
+            if (browser === 'firefox') {
+                setInterval(() => {
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        try {
+                            ws.send(JSON.stringify({ type: 'ping' }));
+                        } catch (e) {
+                            console.warn('Erro ao enviar ping:', e);
+                        }
+                    }
+                }, 30000);
+            }
+
+        } catch (error) {
+            console.error('❌ Erro ao criar WebSocket:', error);
             setTimeout(() => {
-                console.log('🔄 Tentando reconectar...');
+                console.log('🔄 Tentando reconectar após erro...');
                 connectWebSocket();
             }, 3000);
-        };
-
-        ws.onerror = (error) => {
-            console.error('❌ Erro no WebSocket:', error);
-            updateConnectionStatus(false);
-        };
+        }
     }
 
     function handleServerMessage(data) {
-        // Remove mensagem de "pensando" se houver
         removeLastMessageIfTyping();
 
         if (data.status === 'completed') {
@@ -214,7 +396,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (data.status === 'error') {
             addMessage('Erro', data.response, 'error-message', false, false);
         } else if (data.status === 'processing') {
-            // Atualiza progresso
             updateProcessingProgress(data);
         }
     }
@@ -266,6 +447,111 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function updateConnectionStatus(connected) {
+        const existingStatus = document.querySelector('.connection-status');
+        if (existingStatus) existingStatus.remove();
+
+        if (!connected) {
+            const statusDiv = document.createElement('div');
+            statusDiv.className = 'connection-status offline';
+            statusDiv.innerHTML = '<i class="fas fa-exclamation-circle"></i> Desconectado';
+            document.querySelector('.top-bar').appendChild(statusDiv);
+        }
+    }
+
+    // ============================================
+    // ENVIO DE MENSAGENS
+    // ============================================
+    function handleFormSubmit(e) {
+        e.preventDefault();
+
+        console.log('📝 handleFormSubmit chamado');
+
+        const message = userInput.value.trim();
+        if (!message && attachedFiles.length === 0) {
+            console.log('⚠️ Mensagem vazia e sem arquivos');
+            return;
+        }
+
+        if (!isConnected) {
+            console.error('❌ WebSocket não conectado');
+            addMessage('Erro', 'Conexão perdida. Tentando reconectar...', 'error-message', false, false);
+            return;
+        }
+
+        const provider = getSelectedProvider();
+        if (!provider || !provider.value) {
+            console.error('❌ Nenhum provedor selecionado no submit');
+            addMessage('Erro', 'Selecione um provedor LLM antes de enviar.', 'error-message', false, false);
+            ensureProviderSelected();
+            return;
+        }
+
+        console.log('✅ Validações passaram, provedor:', provider);
+
+        if (message) addMessage('Você', message, 'user-message', false, true);
+
+        if (attachedFiles.length > 0) {
+            const totalSize = attachedFiles.reduce((sum, f) => sum + f.size, 0);
+            addMessage('Sistema',
+                `📎 Enviando ${attachedFiles.length} arquivo(s) (${formatSize(totalSize)}) para análise...`,
+                'system-message', false, false);
+        }
+
+        sendMessageToServer(message);
+
+        userInput.value = '';
+        userInput.style.height = 'auto';
+        attachedFiles = [];
+        updateFilePreview();
+    }
+
+    function sendMessageToServer(message) {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            console.error('❌ WebSocket não está aberto');
+            addMessage('Erro', 'Conexão perdida. Reconectando...', 'error-message', false, false);
+            connectWebSocket();
+            return;
+        }
+
+        const history = getConversationHistory();
+        const provider = getSelectedProvider();
+
+        if (!provider || !provider.value) {
+            console.error('❌ Provedor inválido ao enviar');
+            addMessage('Erro', 'Provedor LLM inválido. Selecione um provedor.', 'error-message', false, false);
+            ensureProviderSelected();
+            return;
+        }
+
+        const payload = {
+            provider: provider.value,
+            model: provider.model || "",
+            prompt: message,
+            history: history,
+            files: attachedFiles
+        };
+
+        try {
+            console.log('📤 Enviando mensagem:', {
+                provider: provider.value,
+                model: provider.model,
+                prompt_length: message.length,
+                history_length: history.length,
+                files_count: attachedFiles.length
+            });
+
+            ws.send(JSON.stringify(payload));
+            addMessage(assistantName, '', 'assistant-message', false, false, true);
+        } catch (error) {
+            console.error('❌ Erro ao enviar mensagem:', error);
+            addMessage('Erro', 'Erro ao enviar mensagem. Tente novamente.', 'error-message', false, false);
+        }
+    }
+
+    // ============================================
+    // PROCESSAMENTO DE ARQUIVOS
+    // ============================================
     async function handleFilesSelected(event) {
         if (processingFiles) {
             addMessage('Aviso', 'Aguarde o processamento dos arquivos anteriores.', 'system-message', false, false);
@@ -318,33 +604,28 @@ document.addEventListener('DOMContentLoaded', () => {
             const file = files[i];
 
             try {
-                // Atualiza progresso
                 const percentage = Math.round(((i + 1) / files.length) * 100);
                 updateProcessingProgress({
                     message: `Processando ${i + 1}/${files.length}: ${file.name}`,
                     percentage: percentage
                 });
 
-                // Valida tipo de arquivo
                 const fileInfo = getFileInfo(file);
                 if (!fileInfo) {
                     errors.push(`${file.name}: tipo de arquivo não suportado`);
                     continue;
                 }
 
-                // Valida tamanho individual
                 if (file.size > fileInfo.maxSize) {
                     errors.push(`${file.name}: excede ${formatSize(fileInfo.maxSize)}`);
                     continue;
                 }
 
-                // Valida tamanho total
                 if (totalSize + file.size > MAX_TOTAL_SIZE) {
                     errors.push(`${file.name}: limite total de ${formatSize(MAX_TOTAL_SIZE)} atingido`);
                     continue;
                 }
 
-                // Processa arquivo
                 const processedFile = await processFile(file, fileInfo);
                 processed.push(processedFile);
                 totalSize += file.size;
@@ -354,7 +635,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // Mostra erros se houver
         if (errors.length > 0) {
             console.warn('Arquivos com erro:', errors);
             addMessage('Avisos',
@@ -378,7 +658,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // Se for texto genérico
         if (file.type.startsWith('text/')) {
             return { ...SUPPORTED_TYPES.text, type: 'text' };
         }
@@ -400,7 +679,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 let content = e.target.result;
                 let isBase64 = isImage || isPDF || isOffice;
 
-                // Para imagens e binários, remove o prefixo data:
                 if (isBase64 && typeof content === 'string' && content.includes('base64,')) {
                     content = content.split('base64,')[1];
                 }
@@ -422,7 +700,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             reader.onerror = () => reject(new Error(`Erro ao ler ${file.name}`));
 
-            // Escolhe o método de leitura apropriado
             if (isImage || isPDF || isOffice) {
                 reader.readAsDataURL(file);
             } else {
@@ -430,6 +707,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
     function updateFilePreview() {
         filePreviewContainer.innerHTML = '';
         if (attachedFiles.length === 0) {
@@ -441,7 +719,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const totalSize = attachedFiles.reduce((sum, f) => sum + f.size, 0);
 
-        // Header do preview
         const header = document.createElement('div');
         header.className = 'file-preview-header';
         header.innerHTML = `
@@ -461,7 +738,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         filePreviewContainer.appendChild(header);
 
-        // Lista de arquivos
         const fileList = document.createElement('div');
         fileList.className = 'file-list';
 
@@ -546,50 +822,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function handleFormSubmit(e) {
-        e.preventDefault();
-        const message = userInput.value.trim();
-        if (!message && attachedFiles.length === 0) return;
-        if (!isConnected) {
-            addMessage('Erro', 'Conexão perdida. Tentando reconectar...', 'error-message', false, false);
-            return;
-        }
-
-        if (message) addMessage('Você', message, 'user-message', false, true);
-
-        if (attachedFiles.length > 0) {
-            const totalSize = attachedFiles.reduce((sum, f) => sum + f.size, 0);
-            addMessage('Sistema',
-                `📎 Enviando ${attachedFiles.length} arquivo(s) (${formatSize(totalSize)}) para análise...`,
-                'system-message', false, false);
-        }
-
-        sendMessageToServer(message);
-
-        userInput.value = '';
-        userInput.style.height = 'auto';
-        attachedFiles = [];
-        updateFilePreview();
-    }
-
-    function sendMessageToServer(message) {
-        const history = getConversationHistory();
-        const selectedOption = llmProviderSelect.options[llmProviderSelect.selectedIndex];
-        const provider = selectedOption.value;
-        const model = selectedOption.dataset.model || "";
-
-        const payload = {
-            provider,
-            model,
-            prompt: message,
-            history,
-            files: attachedFiles
-        };
-
-        ws.send(JSON.stringify(payload));
-        addMessage(assistantName, '', 'assistant-message', false, false, true);
-    }
-
+    // ============================================
+    // GERENCIAMENTO DE CONVERSAS
+    // ============================================
     function clearCurrentChatHistory() {
         if (!currentChatID || !confirm("Tem certeza que deseja limpar o histórico desta conversa?")) return;
         localStorage.setItem(currentChatID, '[]');
@@ -604,22 +839,89 @@ document.addEventListener('DOMContentLoaded', () => {
         }));
     }
 
-    function updateAssistantName() {
-        assistantName = llmProviderSelect.options[llmProviderSelect.selectedIndex].text;
+    function handleNewChat() {
+        currentChatID = createNewChat();
+        loadChatHistory();
     }
 
-    function updateConnectionStatus(connected) {
-        const existingStatus = document.querySelector('.connection-status');
-        if (existingStatus) existingStatus.remove();
+    function createNewChat() {
+        const newChatID = `chat_${Date.now()}`;
+        const chatList = JSON.parse(localStorage.getItem('chatList')) || [];
+        chatList.push({ id: newChatID, name: `Conversa ${chatList.length + 1}` });
+        localStorage.setItem('chatList', JSON.stringify(chatList));
+        localStorage.setItem(newChatID, '[]');
+        return newChatID;
+    }
 
-        if (!connected) {
-            const statusDiv = document.createElement('div');
-            statusDiv.className = 'connection-status offline';
-            statusDiv.innerHTML = '<i class="fas fa-exclamation-circle"></i> Desconectado';
-            document.querySelector('.top-bar').appendChild(statusDiv);
+    function loadChatList() {
+        chatListDiv.innerHTML = '';
+        const chatList = JSON.parse(localStorage.getItem('chatList')) || [];
+        chatList.forEach((chat) => {
+            const chatItem = document.createElement('div');
+            chatItem.classList.add('chat-item');
+            chatItem.dataset.id = chat.id;
+            if (chat.id === currentChatID) chatItem.classList.add('active');
+
+            const chatNameSpan = document.createElement('span');
+            chatNameSpan.className = 'chat-name';
+            chatNameSpan.textContent = chat.name;
+
+            const chatActionsDiv = document.createElement('div');
+            chatActionsDiv.className = 'chat-actions';
+
+            const renameButton = document.createElement('button');
+            renameButton.innerHTML = '<i class="fas fa-edit"></i>';
+            renameButton.onclick = (e) => { e.stopPropagation(); renameChat(chat.id, chat.name); };
+
+            const deleteButton = document.createElement('button');
+            deleteButton.innerHTML = '<i class="fas fa-trash"></i>';
+            deleteButton.onclick = (e) => { e.stopPropagation(); deleteChat(chat.id, chat.name); };
+
+            chatActionsDiv.appendChild(renameButton);
+            chatActionsDiv.appendChild(deleteButton);
+
+            chatItem.appendChild(chatNameSpan);
+            chatItem.appendChild(chatActionsDiv);
+
+            chatItem.addEventListener('click', () => { currentChatID = chat.id; loadChatHistory(); });
+            chatListDiv.appendChild(chatItem);
+        });
+    }
+
+    function renameChat(chatID, currentName) {
+        const newName = prompt("Novo nome:", currentName);
+        if (newName && newName.trim()) {
+            const chatList = JSON.parse(localStorage.getItem('chatList'));
+            const chat = chatList.find(c => c.id === chatID);
+            if (chat) {
+                chat.name = newName.trim();
+                localStorage.setItem('chatList', JSON.stringify(chatList));
+                loadChatList();
+            }
         }
     }
 
+    function deleteChat(chatID, chatName) {
+        if (confirm(`Deletar "${chatName}"?`)) {
+            let chatList = (JSON.parse(localStorage.getItem('chatList')) || []).filter(c => c.id !== chatID);
+            localStorage.setItem('chatList', JSON.stringify(chatList));
+            localStorage.removeItem(chatID);
+            if (currentChatID === chatID) {
+                currentChatID = (chatList.length > 0) ? chatList[0].id : createNewChat();
+                loadChatHistory();
+            } else {
+                loadChatList();
+            }
+        }
+    }
+
+    function isChatExists(chatID) {
+        return (JSON.parse(localStorage.getItem('chatList')) || []).some(c => c.id === chatID);
+    }
+
+    // ============================================
+    // EXIBIÇÃO DE MENSAGENS
+    // ============================================
     function scrollToBottom(behavior = 'smooth') {
         requestAnimationFrame(() => {
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
@@ -790,8 +1092,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function removeLastMessageIfTyping() {
         const typingMessage = messagesDiv.querySelector('.message.typing');
         if (typingMessage) messagesDiv.removeChild(typingMessage);
-
-        // Remove também mensagens de progresso
         removeProgressMessage();
     }
 
@@ -806,93 +1106,17 @@ document.addEventListener('DOMContentLoaded', () => {
         messagesDiv.innerHTML = '';
         const history = JSON.parse(localStorage.getItem(currentChatID)) || [];
         history.forEach(msg => {
-            const messageClass = msg.sender === 'Você' ? 'user-message' : (msg.sender === 'Sistema' ? 'system-message' : 'assistant-message');
+            const messageClass = msg.sender === 'Você' ? 'user-message' :
+                (msg.sender === 'Sistema' ? 'system-message' : 'assistant-message');
             addMessage(msg.sender, msg.text, messageClass, msg.isMarkdown, false);
         });
         localStorage.setItem('currentChatID', currentChatID);
         loadChatList();
     }
 
-    function handleNewChat() {
-        currentChatID = createNewChat();
-        loadChatHistory();
-    }
-
-    function createNewChat() {
-        const newChatID = `chat_${Date.now()}`;
-        const chatList = JSON.parse(localStorage.getItem('chatList')) || [];
-        chatList.push({ id: newChatID, name: `Conversa ${chatList.length + 1}` });
-        localStorage.setItem('chatList', JSON.stringify(chatList));
-        localStorage.setItem(newChatID, '[]');
-        return newChatID;
-    }
-
-    function loadChatList() {
-        chatListDiv.innerHTML = '';
-        const chatList = JSON.parse(localStorage.getItem('chatList')) || [];
-        chatList.forEach((chat) => {
-            const chatItem = document.createElement('div');
-            chatItem.classList.add('chat-item');
-            chatItem.dataset.id = chat.id;
-            if (chat.id === currentChatID) chatItem.classList.add('active');
-
-            const chatNameSpan = document.createElement('span');
-            chatNameSpan.className = 'chat-name';
-            chatNameSpan.textContent = chat.name;
-
-            const chatActionsDiv = document.createElement('div');
-            chatActionsDiv.className = 'chat-actions';
-
-            const renameButton = document.createElement('button');
-            renameButton.innerHTML = '<i class="fas fa-edit"></i>';
-            renameButton.onclick = (e) => { e.stopPropagation(); renameChat(chat.id, chat.name); };
-
-            const deleteButton = document.createElement('button');
-            deleteButton.innerHTML = '<i class="fas fa-trash"></i>';
-            deleteButton.onclick = (e) => { e.stopPropagation(); deleteChat(chat.id, chat.name); };
-
-            chatActionsDiv.appendChild(renameButton);
-            chatActionsDiv.appendChild(deleteButton);
-
-            chatItem.appendChild(chatNameSpan);
-            chatItem.appendChild(chatActionsDiv);
-
-            chatItem.addEventListener('click', () => { currentChatID = chat.id; loadChatHistory(); });
-            chatListDiv.appendChild(chatItem);
-        });
-    }
-
-    function renameChat(chatID, currentName) {
-        const newName = prompt("Novo nome:", currentName);
-        if (newName && newName.trim()) {
-            const chatList = JSON.parse(localStorage.getItem('chatList'));
-            const chat = chatList.find(c => c.id === chatID);
-            if (chat) {
-                chat.name = newName.trim();
-                localStorage.setItem('chatList', JSON.stringify(chatList));
-                loadChatList();
-            }
-        }
-    }
-
-    function deleteChat(chatID, chatName) {
-        if (confirm(`Deletar "${chatName}"?`)) {
-            let chatList = (JSON.parse(localStorage.getItem('chatList')) || []).filter(c => c.id !== chatID);
-            localStorage.setItem('chatList', JSON.stringify(chatList));
-            localStorage.removeItem(chatID);
-            if (currentChatID === chatID) {
-                currentChatID = (chatList.length > 0) ? chatList[0].id : createNewChat();
-                loadChatHistory();
-            } else {
-                loadChatList();
-            }
-        }
-    }
-
-    function isChatExists(chatID) {
-        return (JSON.parse(localStorage.getItem('chatList')) || []).some(c => c.id === chatID);
-    }
-
+    // ============================================
+    // UI E TEMAS
+    // ============================================
     function toggleSidebar() {
         document.body.classList.toggle('sidebar-hidden');
         localStorage.setItem('sidebar', document.body.classList.contains('sidebar-hidden') ? 'hidden' : 'visible');
@@ -917,6 +1141,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // ============================================
+    // MOBILE E RESPONSIVIDADE
+    // ============================================
     function setupMobileInteractions() {
         if (window.innerWidth <= 768) {
             document.addEventListener('click', (e) => {
@@ -972,6 +1199,9 @@ document.addEventListener('DOMContentLoaded', () => {
         this.style.height = `${Math.min(this.scrollHeight, maxHeight)}px`;
     }
 
+    // ============================================
+    // BOTÕES DE COPIAR CÓDIGO
+    // ============================================
     function addCopyButtonsToCode() {
         const observer = new MutationObserver((mutations) => {
             mutations.forEach((mutation) => {
@@ -1037,5 +1267,8 @@ document.addEventListener('DOMContentLoaded', () => {
         wrapper.appendChild(button);
     }
 
+    // ============================================
+    // INICIALIZA APLICAÇÃO
+    // ============================================
     initialize();
 });

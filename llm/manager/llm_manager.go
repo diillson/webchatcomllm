@@ -51,9 +51,28 @@ func (m *llmManagerImpl) GetClient(provider, model string) (client.LLMClient, er
 		p = catalog.ProviderStackSpot
 	}
 
+	// CORREÇÃO: Log detalhado
+	m.logger.Debug("GetClient chamado",
+		zap.String("provider_original", provider),
+		zap.String("provider_normalizado", p),
+		zap.String("model", model),
+	)
+
 	factory, ok := m.factories[p]
 	if !ok {
-		return nil, fmt.Errorf("provedor LLM '%s' não é suportado ou não está configurado", provider)
+		// Lista provedores disponíveis
+		available := make([]string, 0, len(m.factories))
+		for key := range m.factories {
+			available = append(available, key)
+		}
+
+		m.logger.Error("Provedor não encontrado",
+			zap.String("provider_solicitado", provider),
+			zap.String("provider_normalizado", p),
+			zap.Strings("provedores_disponiveis", available),
+		)
+
+		return nil, fmt.Errorf("provedor LLM '%s' não é suportado ou não está configurado. Provedores disponíveis: %v", provider, available)
 	}
 	return factory(model)
 }
