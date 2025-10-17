@@ -1,0 +1,592 @@
+/* ============================================
+   ESTILOS PARA SISTEMA DE ATALHOS DE TECLADO
+   ============================================ */
+
+/* Modal de atalhos */
+.shortcuts-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    z-index: 10000;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.shortcuts-modal.active {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 1;
+}
+
+.shortcuts-modal-content {
+    background-color: #2a2b32;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 800px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    animation: modalSlideIn 0.3s ease;
+}
+
+@keyframes modalSlideIn {
+    from {
+        transform: translateY(-50px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.shortcuts-modal-header {
+    padding: 24px 30px;
+    border-bottom: 1px solid #444;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.shortcuts-modal-header h2 {
+    margin: 0;
+    font-size: 24px;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.shortcuts-modal-header h2 i {
+    color: #4CAF50;
+}
+
+.shortcuts-modal-close {
+    background: none;
+    border: none;
+    color: #999;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+
+.shortcuts-modal-close:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.shortcuts-modal-body {
+    padding: 20px 30px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.shortcuts-category {
+    margin-bottom: 30px;
+}
+
+.shortcuts-category:last-child {
+    margin-bottom: 0;
+}
+
+.shortcuts-category h3 {
+    font-size: 16px;
+    color: #4CAF50;
+    margin: 0 0 15px 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #4CAF50;
+    font-weight: 600;
+}
+
+.shortcuts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.shortcut-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background-color: rgba(68, 68, 84, 0.3);
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+
+.shortcut-item:hover {
+    background-color: rgba(68, 68, 84, 0.5);
+    transform: translateX(4px);
+}
+
+.shortcut-description {
+    color: #dcdcdc;
+    font-size: 14px;
+}
+
+.shortcut-keys {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.shortcut-keys kbd {
+    background: linear-gradient(180deg, #3a3a3a 0%, #2a2a2a 100%);
+    border: 1px solid #555;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 13px;
+    color: #fff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    min-width: 28px;
+    text-align: center;
+    font-weight: 600;
+}
+
+.shortcuts-modal-footer {
+    padding: 20px 30px;
+    border-top: 1px solid #444;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.shortcuts-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    color: #dcdcdc;
+    font-size: 14px;
+}
+
+.shortcuts-toggle input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+/* Notificações de atalhos */
+.keyboard-notification {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    background-color: #2a2b32;
+    color: #fff;
+    padding: 16px 24px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    z-index: 9999;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: all 0.3s ease;
+    pointer-events: none;
+}
+
+.keyboard-notification.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.keyboard-notification.success {
+    border-left: 4px solid #4CAF50;
+}
+
+.keyboard-notification.error {
+    border-left: 4px solid #f44336;
+}
+
+.keyboard-notification.info {
+    border-left: 4px solid #2196F3;
+}
+
+.keyboard-notification i {
+    font-size: 20px;
+}
+
+.keyboard-notification.success i {
+    color: #4CAF50;
+}
+
+.keyboard-notification.error i {
+    color: #f44336;
+}
+
+.keyboard-notification.info i {
+    color: #2196F3;
+}
+
+/* Indicador visual de atalhos disponíveis */
+.keyboard-hint {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    background-color: #4CAF50;
+    color: #fff;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+    pointer-events: none;
+    opacity: 0.8;
+}
+
+/* Dark mode */
+body.dark-mode .shortcuts-modal-content {
+    background-color: #1a1b1f;
+}
+
+body.dark-mode .shortcuts-modal-header {
+    border-bottom-color: #333;
+}
+
+body.dark-mode .shortcuts-modal-footer {
+    border-top-color: #333;
+}
+
+body.dark-mode .shortcut-item {
+    background-color: rgba(40, 40, 50, 0.4);
+}
+
+body.dark-mode .shortcut-item:hover {
+    background-color: rgba(40, 40, 50, 0.6);
+}
+
+body.dark-mode .keyboard-notification {
+    background-color: #1a1b1f;
+}
+
+/* Responsividade */
+@media (max-width: 768px) {
+    .shortcuts-modal-content {
+        width: 95%;
+        max-height: 85vh;
+    }
+
+    .shortcuts-modal-header {
+        padding: 20px;
+    }
+
+    .shortcuts-modal-header h2 {
+        font-size: 20px;
+    }
+
+    .shortcuts-modal-body {
+        padding: 15px 20px;
+    }
+
+    .shortcuts-modal-footer {
+        padding: 15px 20px;
+    }
+
+    .shortcut-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .shortcut-keys {
+        align-self: flex-end;
+    }
+
+    .keyboard-notification {
+        bottom: 20px;
+        right: 20px;
+        left: 20px;
+    }
+}
+
+@media (max-width: 480px) {
+    .shortcuts-modal-header h2 {
+        font-size: 18px;
+        gap: 8px;
+    }
+
+    .shortcuts-category h3 {
+        font-size: 14px;
+    }
+
+    .shortcut-description {
+        font-size: 13px;
+    }
+
+    .shortcut-keys kbd {
+        font-size: 11px;
+        padding: 3px 8px;
+        min-width: 24px;
+    }
+
+    .keyboard-notification {
+        padding: 12px 16px;
+        font-size: 13px;
+    }
+}
+
+/* Animação de pulsação para dica de atalho */
+@keyframes pulse-hint {
+    0%, 100% {
+        opacity: 0.6;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.1);
+    }
+}
+
+.keyboard-hint {
+    animation: pulse-hint 2s ease-in-out infinite;
+}
+
+/* Info box no modal */
+.shortcuts-info {
+    background: linear-gradient(135deg, rgba(33, 150, 243, 0.1) 0%, rgba(33, 150, 243, 0.05) 100%);
+    border-left: 4px solid #2196F3;
+    padding: 16px 20px;
+    border-radius: 8px;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.shortcuts-info i {
+    color: #2196F3;
+    font-size: 20px;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.shortcuts-info p {
+    margin: 0;
+    color: #dcdcdc;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.shortcuts-info kbd {
+    background: linear-gradient(180deg, #3a3a3a 0%, #2a2a2a 100%);
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 11px;
+    color: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.shortcuts-hint {
+    color: #999;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.shortcuts-hint kbd {
+    background: linear-gradient(180deg, #3a3a3a 0%, #2a2a2a 100%);
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+    color: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.shortcut-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+    width: 24px;
+    text-align: center;
+}
+
+/* Ajustes no shortcut-item para incluir ícone */
+.shortcut-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background-color: rgba(68, 68, 84, 0.3);
+    border-radius: 8px;
+    transition: all 0.2s;
+    gap: 12px;
+}
+
+.shortcut-item .shortcut-description {
+    flex: 1;
+}
+
+/* Dark mode */
+body.dark-mode .shortcuts-info {
+    background: linear-gradient(135deg, rgba(33, 150, 243, 0.15) 0%, rgba(33, 150, 243, 0.08) 100%);
+}
+
+@media (max-width: 768px) {
+    .shortcuts-info {
+        padding: 12px 16px;
+    }
+
+    .shortcuts-info p {
+        font-size: 12px;
+    }
+
+    .shortcut-icon {
+        font-size: 16px;
+        width: 20px;
+    }
+}
+
+/* Badge do OS */
+.os-badge {
+    font-size: 12px;
+    background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-weight: 600;
+    margin-left: 12px;
+    letter-spacing: 0.5px;
+}
+
+.shortcuts-info strong {
+    color: #4CAF50;
+    font-weight: 600;
+}
+
+/* Melhora na exibição das teclas */
+.shortcut-keys {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.shortcut-keys kbd {
+    background: linear-gradient(180deg, #3a3a3a 0%, #2a2a2a 100%);
+    border: 1px solid #555;
+    border-radius: 5px;
+    padding: 4px 8px;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', monospace;
+    font-size: 13px;
+    color: #fff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    min-width: 24px;
+    text-align: center;
+    font-weight: 600;
+    line-height: 1;
+}
+
+/* Ícone da Apple/Windows no info */
+.shortcuts-info i.fa-apple,
+.shortcuts-info i.fa-windows {
+    font-size: 24px;
+}
+
+/* Indicador de sequência */
+.sequence-indicator {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+    color: white;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 18px;
+    font-weight: bold;
+    box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+    z-index: 10000;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.2s ease;
+    letter-spacing: 4px;
+}
+
+.sequence-indicator.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+/* Melhora no info box */
+.shortcuts-info {
+    background: linear-gradient(135deg, rgba(76, 175, 80, 0.1) 0%, rgba(76, 175, 80, 0.05) 100%);
+    border-left: 4px solid #4CAF50;
+    padding: 16px 20px;
+    border-radius: 8px;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.shortcuts-info i {
+    color: #4CAF50;
+    font-size: 24px;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.shortcuts-info div {
+    flex: 1;
+}
+
+.shortcuts-info p {
+    margin: 0 0 8px 0;
+    color: #dcdcdc;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.shortcuts-info p:last-child {
+    margin-bottom: 0;
+}
+
+.shortcuts-info strong {
+    color: #4CAF50;
+    font-weight: 600;
+}
+
+/* Dark mode */
+body.dark-mode .shortcuts-info {
+    background: linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, rgba(76, 175, 80, 0.08) 100%);
+}
+
+/* Responsividade */
+@media (max-width: 768px) {
+    .sequence-indicator {
+        bottom: 20px;
+        padding: 10px 20px;
+        font-size: 16px;
+        letter-spacing: 3px;
+    }
+
+    .shortcuts-info {
+        padding: 12px 16px;
+    }
+
+    .shortcuts-info i {
+        font-size: 20px;
+    }
+
+    .shortcuts-info p {
+        font-size: 12px;
+    }
+}

@@ -1,5 +1,18 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // --- Elementos do DOM ---
+    // === DETECÇÃO DE BROWSER PARA WEBSOCKET ===
+    const detectBrowser = () => {
+        const ua = navigator.userAgent.toLowerCase();
+        if (ua.indexOf('firefox') > -1) return 'firefox';
+        if (ua.indexOf('edg') > -1) return 'edge';
+        if (ua.indexOf('brave') > -1 || navigator.brave) return 'brave';
+        if (ua.indexOf('chrome') > -1) return 'chrome';
+        if (ua.indexOf('safari') > -1 && ua.indexOf('chrome') === -1) return 'safari';
+        return 'unknown';
+    };
+
+    const browser = detectBrowser();
+    console.log('🌐 Browser detectado:', browser);
+
     const chatListDiv = document.getElementById('chat-list');
     const chatForm = document.getElementById('chat-form');
     const userInput = document.getElementById('user-input');
@@ -22,6 +35,70 @@ document.addEventListener('DOMContentLoaded', () => {
     let isConnected = false;
     let assistantName = "Assistente";
     let attachedFiles = [];
+    let processingFiles = false;
+
+    // Tipos de arquivo suportados
+    const SUPPORTED_TYPES = {
+        // Imagens
+        image: {
+            extensions: ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', '.ico'],
+            mimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'image/webp', 'image/svg+xml'],
+            maxSize: 10 * 1024 * 1024, // 10MB
+            icon: '🖼️',
+            color: '#4CAF50'
+        },
+        // PDFs
+        pdf: {
+            extensions: ['.pdf'],
+            mimeTypes: ['application/pdf'],
+            maxSize: 25 * 1024 * 1024, // 25MB
+            icon: '📕',
+            color: '#F44336'
+        },
+        // Documentos Office
+        docx: {
+            extensions: ['.docx'],
+            mimeTypes: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+            maxSize: 15 * 1024 * 1024, // 15MB
+            icon: '📘',
+            color: '#2196F3'
+        },
+        xlsx: {
+            extensions: ['.xlsx'],
+            mimeTypes: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+            maxSize: 15 * 1024 * 1024, // 15MB
+            icon: '📊',
+            color: '#4CAF50'
+        },
+        // Código e texto
+        code: {
+            extensions: ['.js', '.ts', '.py', '.go', '.java', '.c', '.cpp', '.h', '.cs', '.rb', '.php', '.html', '.css', '.scss', '.sass'],
+            maxSize: 5 * 1024 * 1024,
+            icon: '💻',
+            color: '#9C27B0'
+        },
+        config: {
+            extensions: ['.json', '.yaml', '.yml', '.xml', '.toml', '.ini', '.conf', '.config', '.env'],
+            maxSize: 5 * 1024 * 1024,
+            icon: '⚙️',
+            color: '#FF9800'
+        },
+        markdown: {
+            extensions: ['.md', '.markdown', '.rst'],
+            maxSize: 5 * 1024 * 1024,
+            icon: '📝',
+            color: '#607D8B'
+        },
+        text: {
+            extensions: ['.txt', '.log', '.csv', '.tsv'],
+            maxSize: 5 * 1024 * 1024,
+            icon: '📄',
+            color: '#9E9E9E'
+        }
+    };
+
+    const MAX_TOTAL_SIZE = 50 * 1024 * 1024; // 50MB
+    const MAX_FILES = 50;
 
     function initialize() {
         loadUserTheme();
@@ -45,7 +122,6 @@ document.addEventListener('DOMContentLoaded', () => {
             document.body.classList.add('sidebar-hidden');
         }
 
-        // Em mobile, iniciar com sidebar fechada
         if (window.innerWidth <= 768) {
             document.body.classList.add('sidebar-hidden');
             localStorage.setItem('sidebar', 'hidden');
@@ -61,7 +137,6 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleSidebarButton.addEventListener('click', toggleSidebar);
         toggleSidebarHiddenButton.addEventListener('click', toggleSidebar);
 
-        // Botões de upload
         uploadFileButton.addEventListener('click', () => fileInput.click());
         uploadFolderButton.addEventListener('click', () => folderInput.click());
 
@@ -69,21 +144,62 @@ document.addEventListener('DOMContentLoaded', () => {
         folderInput.addEventListener('change', handleFilesSelected);
 
         clearHistoryButton.addEventListener('click', clearCurrentChatHistory);
+
+        // Drag and drop
+        setupDragAndDrop();
     }
 
     function connectWebSocket() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsURL = `${protocol}//${window.location.host}/ws`;
-        ws = new WebSocket(wsURL);
 
-        ws.onopen = () => { isConnected = true; console.log('WebSocket conectado.'); };
-        ws.onmessage = (event) => handleServerMessage(JSON.parse(event.data));
-        ws.onclose = () => { isConnected = false; console.log('WebSocket desconectado. Reconectando...'); setTimeout(connectWebSocket, 3000); };
-        ws.onerror = (error) => { console.error('Erro no WebSocket:', error); ws.close(); };
+        console.log('🔌 Tentando conectar WebSocket:', wsURL);
+
+        // CORREÇÃO: Configuração específica por browser
+        if (browser === 'firefox') {
+            // Firefox precisa de configurações específicas
+            ws = new WebSocket(wsURL, ['chat']);
+        } else {
+            ws = new WebSocket(wsURL);
+        }
+
+        ws.onopen = () => {
+            isConnected = true;
+            console.log('✅ WebSocket conectado com sucesso');
+            updateConnectionStatus(true);
+        };
+
+        ws.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                handleServerMessage(data);
+            } catch (error) {
+                console.error('❌ Erro ao processar mensagem:', error);
+            }
+        };
+
+        ws.onclose = (event) => {
+            isConnected = false;
+            console.log('🔌 WebSocket desconectado. Código:', event.code, 'Razão:', event.reason);
+            updateConnectionStatus(false);
+
+            // Reconecta após 3 segundos
+            setTimeout(() => {
+                console.log('🔄 Tentando reconectar...');
+                connectWebSocket();
+            }, 3000);
+        };
+
+        ws.onerror = (error) => {
+            console.error('❌ Erro no WebSocket:', error);
+            updateConnectionStatus(false);
+        };
     }
 
     function handleServerMessage(data) {
+        // Remove mensagem de "pensando" se houver
         removeLastMessageIfTyping();
+
         if (data.status === 'completed') {
             const isMarkdown = data.isMarkdown !== undefined ? data.isMarkdown : true;
 
@@ -97,6 +213,336 @@ document.addEventListener('DOMContentLoaded', () => {
             addMessageWithTypingEffect(assistantName, data.response, 'assistant-message', isMarkdown, true);
         } else if (data.status === 'error') {
             addMessage('Erro', data.response, 'error-message', false, false);
+        } else if (data.status === 'processing') {
+            // Atualiza progresso
+            updateProcessingProgress(data);
+        }
+    }
+
+    function updateProcessingProgress(data) {
+        const progressMessage = messagesDiv.querySelector('.progress-message');
+
+        if (progressMessage) {
+            const progressBar = progressMessage.querySelector('.progress-bar-fill');
+            const progressText = progressMessage.querySelector('.progress-text');
+
+            if (progressBar && data.percentage !== undefined) {
+                progressBar.style.width = `${data.percentage}%`;
+            }
+
+            if (progressText && data.message) {
+                progressText.textContent = data.message;
+            }
+        } else {
+            addProgressMessage(data.message, data.percentage || 0);
+        }
+    }
+
+    function addProgressMessage(message, percentage) {
+        const messageElement = document.createElement('div');
+        messageElement.classList.add('message', 'system-message', 'progress-message');
+
+        const contentElement = document.createElement('div');
+        contentElement.classList.add('message-content');
+        contentElement.innerHTML = `
+                <strong>Sistema:</strong>
+                <div class="progress-container">
+                    <div class="progress-text">${message}</div>
+                    <div class="progress-bar">
+                        <div class="progress-bar-fill" style="width: ${percentage}%"></div>
+                    </div>
+                </div>
+            `;
+
+        messageElement.appendChild(contentElement);
+        messagesDiv.appendChild(messageElement);
+        scrollToBottom();
+    }
+
+    function removeProgressMessage() {
+        const progressMessage = messagesDiv.querySelector('.progress-message');
+        if (progressMessage) {
+            progressMessage.remove();
+        }
+    }
+
+    async function handleFilesSelected(event) {
+        if (processingFiles) {
+            addMessage('Aviso', 'Aguarde o processamento dos arquivos anteriores.', 'system-message', false, false);
+            return;
+        }
+
+        const files = Array.from(event.target.files);
+        if (files.length === 0) return;
+
+        if (files.length > MAX_FILES) {
+            addMessage('Erro', `Máximo de ${MAX_FILES} arquivos por vez. Você selecionou ${files.length}.`, 'error-message', false, false);
+            event.target.value = '';
+            return;
+        }
+
+        processingFiles = true;
+        addProgressMessage(`Processando ${files.length} arquivo(s)...`, 0);
+
+        try {
+            const processedFiles = await processFilesLocally(files);
+
+            if (processedFiles.length === 0) {
+                throw new Error('Nenhum arquivo válido foi processado.');
+            }
+
+            removeProgressMessage();
+            attachedFiles = processedFiles;
+
+            const totalSize = processedFiles.reduce((sum, f) => sum + f.size, 0);
+            addMessage('Sistema',
+                `✅ ${processedFiles.length} arquivo(s) anexado(s) com sucesso (${formatSize(totalSize)})`,
+                'system-message', false, false);
+
+            updateFilePreview();
+        } catch (error) {
+            removeProgressMessage();
+            addMessage('Erro', error.message, 'error-message', false, false);
+        } finally {
+            processingFiles = false;
+            event.target.value = '';
+        }
+    }
+
+    async function processFilesLocally(files) {
+        const processed = [];
+        const errors = [];
+        let totalSize = 0;
+
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+
+            try {
+                // Atualiza progresso
+                const percentage = Math.round(((i + 1) / files.length) * 100);
+                updateProcessingProgress({
+                    message: `Processando ${i + 1}/${files.length}: ${file.name}`,
+                    percentage: percentage
+                });
+
+                // Valida tipo de arquivo
+                const fileInfo = getFileInfo(file);
+                if (!fileInfo) {
+                    errors.push(`${file.name}: tipo de arquivo não suportado`);
+                    continue;
+                }
+
+                // Valida tamanho individual
+                if (file.size > fileInfo.maxSize) {
+                    errors.push(`${file.name}: excede ${formatSize(fileInfo.maxSize)}`);
+                    continue;
+                }
+
+                // Valida tamanho total
+                if (totalSize + file.size > MAX_TOTAL_SIZE) {
+                    errors.push(`${file.name}: limite total de ${formatSize(MAX_TOTAL_SIZE)} atingido`);
+                    continue;
+                }
+
+                // Processa arquivo
+                const processedFile = await processFile(file, fileInfo);
+                processed.push(processedFile);
+                totalSize += file.size;
+
+            } catch (error) {
+                errors.push(`${file.name}: ${error.message}`);
+            }
+        }
+
+        // Mostra erros se houver
+        if (errors.length > 0) {
+            console.warn('Arquivos com erro:', errors);
+            addMessage('Avisos',
+                `Alguns arquivos não puderam ser processados:\n${errors.join('\n')}`,
+                'system-message', false, false);
+        }
+
+        return processed;
+    }
+
+    function getFileInfo(file) {
+        const fileName = file.name.toLowerCase();
+        const fileExt = '.' + fileName.split('.').pop();
+
+        for (const [type, info] of Object.entries(SUPPORTED_TYPES)) {
+            if (info.extensions && info.extensions.includes(fileExt)) {
+                return { ...info, type };
+            }
+            if (info.mimeTypes && info.mimeTypes.includes(file.type)) {
+                return { ...info, type };
+            }
+        }
+
+        // Se for texto genérico
+        if (file.type.startsWith('text/')) {
+            return { ...SUPPORTED_TYPES.text, type: 'text' };
+        }
+
+        return null;
+    }
+
+    async function processFile(file, fileInfo) {
+        const isImage = fileInfo.type === 'image';
+        const isPDF = fileInfo.type === 'pdf';
+        const isOffice = ['docx', 'xlsx'].includes(fileInfo.type);
+
+        const relativePath = file.webkitRelativePath || file.name;
+
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+
+            reader.onload = (e) => {
+                let content = e.target.result;
+                let isBase64 = isImage || isPDF || isOffice;
+
+                // Para imagens e binários, remove o prefixo data:
+                if (isBase64 && typeof content === 'string' && content.includes('base64,')) {
+                    content = content.split('base64,')[1];
+                }
+
+                resolve({
+                    name: relativePath,
+                    content: content,
+                    contentType: file.type || 'application/octet-stream',
+                    fileType: fileInfo.type,
+                    size: file.size,
+                    isBase64: isBase64,
+                    metadata: {
+                        lastModified: file.lastModified,
+                        icon: fileInfo.icon,
+                        color: fileInfo.color
+                    }
+                });
+            };
+
+            reader.onerror = () => reject(new Error(`Erro ao ler ${file.name}`));
+
+            // Escolhe o método de leitura apropriado
+            if (isImage || isPDF || isOffice) {
+                reader.readAsDataURL(file);
+            } else {
+                reader.readAsText(file);
+            }
+        });
+    }
+    function updateFilePreview() {
+        filePreviewContainer.innerHTML = '';
+        if (attachedFiles.length === 0) {
+            filePreviewContainer.style.display = 'none';
+            return;
+        }
+
+        filePreviewContainer.style.display = 'block';
+
+        const totalSize = attachedFiles.reduce((sum, f) => sum + f.size, 0);
+
+        // Header do preview
+        const header = document.createElement('div');
+        header.className = 'file-preview-header';
+        header.innerHTML = `
+                <div class="file-preview-summary">
+                    <span class="file-count">${attachedFiles.length} arquivo(s)</span>
+                    <span class="file-size">${formatSize(totalSize)}</span>
+                </div>
+                <button type="button" class="clear-all-files" title="Remover todos">
+                    <i class="fas fa-times"></i> Limpar tudo
+                </button>
+            `;
+
+        header.querySelector('.clear-all-files').addEventListener('click', () => {
+            attachedFiles = [];
+            updateFilePreview();
+        });
+
+        filePreviewContainer.appendChild(header);
+
+        // Lista de arquivos
+        const fileList = document.createElement('div');
+        fileList.className = 'file-list';
+
+        attachedFiles.forEach((file, index) => {
+            const fileItem = document.createElement('div');
+            fileItem.className = 'file-item';
+            fileItem.style.borderLeft = `3px solid ${file.metadata.color || '#999'}`;
+
+            const fileIcon = file.metadata.icon || '📄';
+            const fileSize = formatSize(file.size);
+            const fileType = file.fileType.toUpperCase();
+
+            fileItem.innerHTML = `
+                    <div class="file-info">
+                        <span class="file-icon">${fileIcon}</span>
+                        <div class="file-details">
+                            <div class="file-name" title="${file.name}">${file.name}</div>
+                            <div class="file-meta">
+                                <span class="file-type-badge">${fileType}</span>
+                                <span class="file-size-text">${fileSize}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" class="remove-file" title="Remover arquivo">
+                        <i class="fas fa-times"></i>
+                    </button>
+                `;
+
+            fileItem.querySelector('.remove-file').addEventListener('click', () => {
+                attachedFiles.splice(index, 1);
+                updateFilePreview();
+            });
+
+            fileList.appendChild(fileItem);
+        });
+
+        filePreviewContainer.appendChild(fileList);
+    }
+
+    function formatSize(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+    }
+
+    function setupDragAndDrop() {
+        const dropZone = document.getElementById('chat-container');
+
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => {
+                dropZone.classList.add('drag-over');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => {
+                dropZone.classList.remove('drag-over');
+            }, false);
+        });
+
+        dropZone.addEventListener('drop', handleDrop, false);
+    }
+
+    async function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = [...dt.files];
+
+        if (files.length > 0) {
+            const fakeEvent = { target: { files: files, value: '' } };
+            await handleFilesSelected(fakeEvent);
         }
     }
 
@@ -110,9 +556,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (message) addMessage('Você', message, 'user-message', false, true);
+
         if (attachedFiles.length > 0) {
-            const totalSize = attachedFiles.reduce((sum, f) => sum + (f.size || 0), 0);
-            addMessage('Sistema', `Enviando ${attachedFiles.length} arquivo(s) (${(totalSize / 1024).toFixed(2)}KB) para análise...`, 'system-message', false, false);
+            const totalSize = attachedFiles.reduce((sum, f) => sum + f.size, 0);
+            addMessage('Sistema',
+                `📎 Enviando ${attachedFiles.length} arquivo(s) (${formatSize(totalSize)}) para análise...`,
+                'system-message', false, false);
         }
 
         sendMessageToServer(message);
@@ -129,120 +578,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const provider = selectedOption.value;
         const model = selectedOption.dataset.model || "";
 
-        ws.send(JSON.stringify({ provider, model, prompt: message, history, files: attachedFiles }));
+        const payload = {
+            provider,
+            model,
+            prompt: message,
+            history,
+            files: attachedFiles
+        };
+
+        ws.send(JSON.stringify(payload));
         addMessage(assistantName, '', 'assistant-message', false, false, true);
-    }
-
-    async function handleFilesSelected(event) {
-        const files = Array.from(event.target.files);
-        if (files.length === 0) return;
-
-        addMessage('Sistema', `Processando ${files.length} arquivo(s)...`, 'system-message', false, false);
-
-        attachedFiles = [];
-        const maxFileSize = 5 * 1024 * 1024;
-        const maxTotalSize = 20 * 1024 * 1024;
-        let totalSize = 0;
-        let skippedFiles = [];
-
-        const filePromises = files.map(file =>
-            new Promise((resolve, reject) => {
-                if (file.size > maxFileSize) {
-                    skippedFiles.push(`${file.name} (muito grande: ${(file.size / 1024 / 1024).toFixed(2)}MB)`);
-                    resolve();
-                    return;
-                }
-
-                if (totalSize + file.size > maxTotalSize) {
-                    skippedFiles.push(`${file.name} (limite total atingido)`);
-                    resolve();
-                    return;
-                }
-
-                const reader = new FileReader();
-                reader.onload = e => {
-                    const relativePath = file.webkitRelativePath || file.name;
-                    attachedFiles.push({
-                        name: relativePath,
-                        content: e.target.result,
-                        size: file.size
-                    });
-                    totalSize += file.size;
-                    resolve();
-                };
-                reader.onerror = () => reject(new Error(`Erro ao ler ${file.name}`));
-                reader.readAsText(file);
-            })
-        );
-
-        try {
-            await Promise.all(filePromises);
-            removeLastMessageIfSystem();
-
-            if (skippedFiles.length > 0) {
-                addMessage('Aviso',
-                    `Arquivos ignorados:\n${skippedFiles.join('\n')}`,
-                    'system-message', false, false);
-            }
-
-            if (attachedFiles.length > 0) {
-                addMessage('Sistema',
-                    `${attachedFiles.length} arquivo(s) anexado(s) (${(totalSize / 1024).toFixed(2)}KB)`,
-                    'system-message', false, false);
-                updateFilePreview();
-            } else {
-                addMessage('Erro',
-                    'Nenhum arquivo válido foi selecionado.',
-                    'error-message', false, false);
-            }
-        } catch (error) {
-            removeLastMessageIfSystem();
-            addMessage('Erro', error.message, 'error-message', false, false);
-        }
-        fileInput.value = '';
-        folderInput.value = '';
-    }
-
-    function updateFilePreview() {
-        filePreviewContainer.innerHTML = '';
-        if (attachedFiles.length === 0) {
-            filePreviewContainer.style.display = 'none';
-            return;
-        }
-
-        filePreviewContainer.style.display = 'block';
-
-        const totalSize = attachedFiles.reduce((sum, f) => sum + (f.size || 0), 0);
-        const summary = document.createElement('div');
-        summary.style.cssText = 'font-size: 11px; color: #999; margin-bottom: 5px; padding: 5px;';
-        summary.textContent = `${attachedFiles.length} arquivo(s) - ${(totalSize / 1024).toFixed(2)}KB total`;
-        filePreviewContainer.appendChild(summary);
-
-        const fileList = document.createElement('ul');
-        fileList.style.maxHeight = '150px';
-        fileList.style.overflowY = 'auto';
-
-        attachedFiles.forEach((file, index) => {
-            const listItem = document.createElement('li');
-            const fileSize = file.size ? ` (${(file.size / 1024).toFixed(1)}KB)` : '';
-            listItem.innerHTML = `
-                    <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" 
-                          title="${file.name}">
-                        ${file.name}${fileSize}
-                    </span>
-                `;
-
-            const removeButton = document.createElement('button');
-            removeButton.innerHTML = '&times;';
-            removeButton.title = 'Remover arquivo';
-            removeButton.onclick = () => {
-                attachedFiles.splice(index, 1);
-                updateFilePreview();
-            };
-            listItem.appendChild(removeButton);
-            fileList.appendChild(listItem);
-        });
-        filePreviewContainer.appendChild(fileList);
     }
 
     function clearCurrentChatHistory() {
@@ -261,6 +606,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateAssistantName() {
         assistantName = llmProviderSelect.options[llmProviderSelect.selectedIndex].text;
+    }
+
+    function updateConnectionStatus(connected) {
+        const existingStatus = document.querySelector('.connection-status');
+        if (existingStatus) existingStatus.remove();
+
+        if (!connected) {
+            const statusDiv = document.createElement('div');
+            statusDiv.className = 'connection-status offline';
+            statusDiv.innerHTML = '<i class="fas fa-exclamation-circle"></i> Desconectado';
+            document.querySelector('.top-bar').appendChild(statusDiv);
+        }
     }
 
     function scrollToBottom(behavior = 'smooth') {
@@ -284,7 +641,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const parsed = marked.parse(text);
                 cleanHtml = DOMPurify.sanitize(parsed);
             } else {
-                cleanHtml = DOMPurify.sanitize(text.replace(/</g, "&lt;").replace(/>/g, "&gt;"));
+                cleanHtml = DOMPurify.sanitize(text.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>"));
             }
             contentElement.innerHTML = `<strong>${sender}:</strong> ${cleanHtml}`;
         }
@@ -433,16 +790,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function removeLastMessageIfTyping() {
         const typingMessage = messagesDiv.querySelector('.message.typing');
         if (typingMessage) messagesDiv.removeChild(typingMessage);
-    }
 
-    function removeLastMessageIfSystem() {
-        const messages = messagesDiv.querySelectorAll('.message.system-message');
-        if (messages.length > 0) {
-            const lastSystem = messages[messages.length - 1];
-            if (lastSystem.textContent.includes('Processando')) {
-                messagesDiv.removeChild(lastSystem);
-            }
-        }
+        // Remove também mensagens de progresso
+        removeProgressMessage();
     }
 
     function saveMessage(sender, text, isMarkdown) {
