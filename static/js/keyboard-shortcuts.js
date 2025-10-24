@@ -51,7 +51,7 @@ class KeyboardShortcuts {
         const hasSeenHint = localStorage.getItem('keyboardShortcutsHintSeen');
         if (!hasSeenHint) {
             setTimeout(() => {
-                this.showNotification('💡 Pressione ? para ver os atalhos', 'info', 4000);
+                this.showNotification('💡 Pressione Shift + F1 para ver os atalhos', 'info', 4000);
                 localStorage.setItem('keyboardShortcutsHintSeen', 'true');
             }, 2000);
         }
@@ -66,11 +66,11 @@ class KeyboardShortcuts {
 
         // Ajuda - apenas ?
         this.register({
-            key: '?',
+            key: 'F1',
             shift: true, // ? requer Shift naturalmente
             description: 'Mostrar/Ocultar atalhos',
             category: 'Ajuda',
-            icon: '❓',
+            icon: '📚',
             action: (e) => {
                 e.preventDefault();
                 this.toggleShortcutsModal();
@@ -494,7 +494,7 @@ class KeyboardShortcuts {
                             <span>Atalhos habilitados</span>
                         </label>
                         <span class="shortcuts-hint">
-                            Pressione <kbd>?</kbd> para abrir/fechar
+                            Pressione <kbd>Shift + F1</kbd> para abrir/fechar
                         </span>
                     </div>
                 </div>
