@@ -1,17 +1,30 @@
-/* Reset e configurações básicas */
-* {
-    margin: 0;
-    padding: 0;
+/* ============================================
+   RESET E CONFIGURAÇÕES GLOBAIS
+   ============================================ */
+
+*, *::before, *::after {
     box-sizing: border-box;
 }
 
+html {
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100vw;
+}
+
 body {
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100vw;
+    position: relative;
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     transition: background-color 0.3s, color 0.3s;
     height: 100vh;
     overflow: hidden;
     background-color: #343541;
     color: #dcdcdc;
+    margin: 0;
+    padding: 0;
 }
 
 body.sidebar-hidden #sidebar {
@@ -19,13 +32,22 @@ body.sidebar-hidden #sidebar {
     overflow: hidden;
 }
 
-/* Container Principal */
+/* ============================================
+   CONTAINER PRINCIPAL
+   ============================================ */
+
 #main-container {
     display: flex;
     height: 100vh;
+    overflow: hidden;
+    width: 100vw;
+    max-width: 100vw;
 }
 
-/* Barra Lateral */
+/* ============================================
+   BARRA LATERAL
+   ============================================ */
+
 #sidebar {
     flex: 0 0 260px;
     background-color: #202123;
@@ -34,6 +56,7 @@ body.sidebar-hidden #sidebar {
     flex-direction: column;
     transition: flex-basis 0.3s ease;
     border-right: 1px solid #3a3a3a;
+    overflow: hidden;
 }
 
 .sidebar-header {
@@ -127,7 +150,10 @@ body.sidebar-hidden #sidebar {
     cursor: pointer;
 }
 
-/* Área Principal do Chat */
+/* ============================================
+   ÁREA PRINCIPAL DO CHAT
+   ============================================ */
+
 #chat-container {
     flex: 1;
     display: flex;
@@ -135,6 +161,8 @@ body.sidebar-hidden #sidebar {
     position: relative;
     min-height: 0;
     height: 100vh;
+    overflow: hidden;
+    min-width: 0;
 }
 
 .top-bar {
@@ -163,6 +191,10 @@ body.sidebar-hidden #toggle-sidebar-hidden {
     display: block;
 }
 
+/* ============================================
+   ÁREA DE MENSAGENS (CORREÇÃO OVERFLOW)
+   ============================================ */
+
 #messages {
     flex: 1;
     overflow-y: auto;
@@ -173,15 +205,49 @@ body.sidebar-hidden #toggle-sidebar-hidden {
     min-height: 0;
     scroll-behavior: smooth;
     -webkit-overflow-scrolling: touch;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    width: 100%;
+    max-width: 100%;
 }
+
+#messages::-webkit-scrollbar {
+    width: 10px;
+}
+
+#messages::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.1);
+}
+
+#messages::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 5px;
+}
+
+#messages::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* ============================================
+   MENSAGENS (CORREÇÃO OVERFLOW)
+   ============================================ */
 
 .message {
     margin-bottom: 20px;
     max-width: 80%;
+    min-width: 0; /* CORREÇÃO APLICADA AQUI */
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    /* A propriedade 'overflow: hidden' foi removida para permitir que o conteúdo interno gerencie seu próprio overflow */
 }
 
 .user-message {
     margin-left: auto;
+}
+
+/* CORREÇÃO APLICADA AQUI: Regra para o balão do assistente ter mais espaço */
+.assistant-message {
+    max-width: 95%;
 }
 
 .user-message .message-content {
@@ -193,35 +259,412 @@ body.sidebar-hidden #toggle-sidebar-hidden {
     background-color: #444654;
 }
 
+/* CORREÇÃO CRÍTICA: System message não deve ter max-width: 80% */
+.system-message {
+    max-width: 100% !important; /* FORÇA largura total */
+    width: 100%;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    animation: slideInSystem 0.3s ease;
+}
+
+@keyframes slideInSystem {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 .system-message .message-content {
     background-color: #2a2b32;
-    color: #9e9e9e;
-    font-style: italic;
-    font-size: 12px;
+    color: #dcdcdc;
+    font-style: normal;
+    font-size: 13px;
     text-align: center;
     width: 100%;
     max-width: 100%;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    padding: 12px 20px;
+    border-left: 3px solid #2196F3;
+    box-sizing: border-box; /* IMPORTANTE */
+}
+
+/* Mensagem de progresso específica */
+.progress-message {
+    max-width: 100% !important; /* FORÇA largura total */
+    width: 100%;
+}
+
+.progress-message .message-content {
+    background: linear-gradient(135deg, #2a2b32 0%, #232429 100%);
+    border-left-color: #4CAF50;
+    padding: 15px 20px;
+    box-sizing: border-box; /* IMPORTANTE */
+}
+
+.system-message .message-content i {
+    font-size: 16px;
+    vertical-align: middle;
 }
 
 .error-message .message-content {
     background-color: #581d1d;
     color: #ffcccc;
     border: 1px solid #a83232;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
 }
 
 .message-content {
     padding: 15px;
     border-radius: 8px;
     line-height: 1.6;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
     word-break: break-word;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
     display: block;
+    hyphens: auto;
+    -webkit-hyphens: auto;
+    -moz-hyphens: auto;
+    -ms-hyphens: auto;
+    box-sizing: border-box; /* ADICIONADO */
 }
 
 .message-content strong {
     display: block;
     margin-bottom: 5px;
     font-weight: bold;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
 }
+
+.message-content p {
+    margin: 10px 0;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
+
+.message-content em,
+.message-content span {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+/* ============================================
+   HEADERS EM MARKDOWN
+   ============================================ */
+
+.message-content h1,
+.message-content h2,
+.message-content h3,
+.message-content h4 {
+    margin-top: 15px;
+    margin-bottom: 10px;
+    color: #dcdcdc;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.message-content h1 {
+    font-size: 1.8em;
+    border-bottom: 2px solid #056162;
+    padding-bottom: 5px;
+}
+
+.message-content h2 {
+    font-size: 1.5em;
+    border-bottom: 1px solid #056162;
+    padding-bottom: 5px;
+}
+
+.message-content h3 {
+    font-size: 1.3em;
+}
+
+.message-content h4 {
+    font-size: 1.1em;
+}
+
+/* ============================================
+   LISTAS
+   ============================================ */
+
+.message-content ul,
+.message-content ol {
+    margin: 10px 0;
+    padding-left: 25px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.message-content li {
+    margin: 5px 0;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+/* ============================================
+   LINKS (CORREÇÃO OVERFLOW)
+   ============================================ */
+
+.message-content a {
+    color: #4a9eff;
+    text-decoration: none;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-all;
+}
+
+.message-content a:hover {
+    text-decoration: underline;
+}
+
+/* ============================================
+   TABELAS (CORREÇÃO OVERFLOW)
+   ============================================ */
+
+.message-content table {
+    border-collapse: collapse;
+    width: 100%;
+    max-width: 100%;
+    margin: 10px 0;
+    display: block;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.message-content table th,
+.message-content table td {
+    border: 1px solid #555;
+    padding: 8px;
+    text-align: left;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.message-content table th {
+    background-color: #2a2b32;
+    font-weight: bold;
+}
+
+/* ============================================
+   BLOCKQUOTES
+   ============================================ */
+
+.message-content blockquote {
+    border-left: 4px solid #056162;
+    margin: 10px 0;
+    padding-left: 15px;
+    color: #a0a0a0;
+    font-style: italic;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+/* ============================================
+   HORIZONTAL RULE
+   ============================================ */
+
+.message-content hr {
+    border: none;
+    border-top: 1px solid #555;
+    margin: 15px 0;
+}
+
+/* ============================================
+   IMAGENS E MEDIA (CORREÇÃO OVERFLOW)
+   ============================================ */
+
+.message-content img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 10px 0;
+    border-radius: 5px;
+}
+
+.message-content iframe,
+.message-content video,
+.message-content embed {
+    max-width: 100%;
+    height: auto;
+}
+
+/* ============================================
+   BLOCOS DE CÓDIGO (CORREÇÃO OVERFLOW)
+   ============================================ */
+
+/* CORREÇÃO APLICADA AQUI: Simplificado para 'overflow: auto' */
+.message-content pre {
+    background-color: #2e2e2e;
+    padding: 15px;
+    border-radius: 5px;
+    overflow: auto;
+    margin: 10px 0;
+    border-left: 3px solid #056162;
+    max-height: 500px;
+    max-width: 100%;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.message-content code {
+    background-color: #2e2e2e;
+    padding: 2px 6px;
+    border-radius: 3px;
+    color: #a8ff60;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.9em;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
+
+/* CORREÇÃO APLICADA AQUI: Regras reforçadas para impedir quebra de linha de código */
+.message-content pre code {
+    padding: 0;
+    background: none;
+    display: block;
+    color: #f8f8f2;
+    white-space: pre;
+    word-wrap: normal;
+    overflow-wrap: normal;
+    word-break: normal; /* Garante que palavras longas (como URLs) não quebrem */
+}
+
+.message-content pre code.language-yaml,
+.message-content pre code.language-yml,
+.message-content pre code.language-json,
+.message-content pre code.language-xml {
+    white-space: pre;
+    overflow-x: auto;
+    display: block;
+    max-width: 100%;
+    color: #f8f8f2;
+    line-height: 1.6;
+}
+
+/* Wrapper para code blocks */
+.code-block-wrapper {
+    position: relative;
+    margin: 10px 0;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.code-block-wrapper pre {
+    margin: 0;
+    padding-right: 60px;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+/* Botão de copiar código */
+.copy-button {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background-color: rgba(5, 97, 98, 0.9);
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: all 0.2s ease;
+    z-index: 10;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    white-space: nowrap;
+}
+
+.code-block-wrapper:hover .copy-button {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.copy-button:hover {
+    background-color: rgba(6, 124, 125, 0.95);
+    transform: scale(1.05);
+}
+
+.copy-button:active {
+    transform: scale(0.98);
+}
+
+.copy-button.copied {
+    background-color: rgba(40, 167, 69, 0.9);
+}
+
+.copy-button.error {
+    background-color: rgba(220, 53, 69, 0.9);
+}
+
+.copy-button i {
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+}
+
+.copy-button::after {
+    content: '';
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.copy-button:hover::after {
+    content: 'Copiar';
+    opacity: 1;
+    margin-left: 2px;
+}
+
+.copy-button.copied::after {
+    content: 'Copiado!';
+    opacity: 1;
+}
+
+.copy-button.error::after {
+    content: 'Erro';
+    opacity: 1;
+}
+
+/* Scrollbar para code blocks */
+.message-content pre::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.message-content pre::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+}
+
+.message-content pre::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+}
+
+.message-content pre::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.5);
+}
+
+/* ============================================
+   FORMULÁRIO DE CHAT
+   ============================================ */
 
 #chat-form {
     padding: 20px;
@@ -297,655 +740,10 @@ body.sidebar-hidden #toggle-sidebar-hidden {
     padding: 8px;
 }
 
-/* Estilos para Upload */
-#file-preview-container {
-    display: none;
-    background-color: #2a2b32;
-    border: 1px dashed #555;
-    border-radius: 5px;
-    margin-bottom: 10px;
-    padding: 10px;
-    max-height: 150px;
-    overflow-y: auto;
-    flex-shrink: 0;
-}
-
-#file-preview-container ul {
-    list-style-type: none;
-    padding: 0;
-    margin: 0;
-}
-
-#file-preview-container li {
-    background-color: #343541;
-    padding: 5px 10px;
-    border-radius: 3px;
-    margin-bottom: 5px;
-    font-size: 12px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-#file-preview-container li button {
-    background: none;
-    border: none;
-    color: #ccc;
-    cursor: pointer;
-    font-size: 16px;
-    line-height: 1;
-}
-
-/* Indicador de Digitação ("Pensando...") */
-.typing-indicator {
-    display: inline-flex;
-    gap: 4px;
-    margin-left: 8px;
-}
-
-.typing-indicator span {
-    width: 8px;
-    height: 8px;
-    background-color: #999;
-    border-radius: 50%;
-    animation: typing-blink 1.4s infinite both;
-}
-
-.typing-indicator span:nth-child(2) {
-    animation-delay: 0.2s;
-}
-
-.typing-indicator span:nth-child(3) {
-    animation-delay: 0.4s;
-}
-
-@keyframes typing-blink {
-    0% { opacity: 0.2; transform: scale(0.8); }
-    20% { opacity: 1; transform: scale(1); }
-    100% { opacity: 0.2; transform: scale(0.8); }
-}
-
-/* Efeito de digitação em progresso */
-.typing-content {
-    display: inline;
-}
-
-.typing-content::after {
-    content: '▌';
-    animation: cursor-blink 1s step-end infinite;
-    margin-left: 2px;
-    color: #056162;
-}
-
-@keyframes cursor-blink {
-    50% { opacity: 0; }
-}
-
-.typing-content.complete::after {
-    display: none;
-}
-
-/* Wrapper para code blocks com botão de copiar */
-.code-block-wrapper {
-    position: relative;
-    margin: 10px 0;
-}
-
-.code-block-wrapper pre {
-    margin: 0;
-    padding-right: 60px;
-}
-
-/* Botão de copiar código - VERSÃO MELHORADA */
-.copy-button {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    background-color: rgba(5, 97, 98, 0.9);
-    color: white;
-    border: none;
-    padding: 8px 12px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 14px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    opacity: 0;
-    transform: translateY(-4px);
-    transition: all 0.2s ease;
-    z-index: 10;
-    backdrop-filter: blur(4px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    white-space: nowrap;
-}
-
-.code-block-wrapper:hover .copy-button {
-    opacity: 1;
-    transform: translateY(0);
-}
-
-.copy-button:hover {
-    background-color: rgba(6, 124, 125, 0.95);
-    transform: scale(1.05);
-}
-
-.copy-button:active {
-    transform: scale(0.98);
-}
-
-.copy-button.copied {
-    background-color: rgba(40, 167, 69, 0.9);
-}
-
-.copy-button.error {
-    background-color: rgba(220, 53, 69, 0.9);
-}
-
-.copy-button i {
-    font-size: 14px;
-    display: flex;
-    align-items: center;
-}
-
-.copy-button::after {
-    content: '';
-    opacity: 0;
-    transition: opacity 0.2s;
-}
-
-.copy-button:hover::after {
-    content: 'Copiar';
-    opacity: 1;
-    margin-left: 2px;
-}
-
-.copy-button.copied::after {
-    content: 'Copiado!';
-    opacity: 1;
-}
-
-.copy-button.error::after {
-    content: 'Erro';
-    opacity: 1;
-}
-
-/* Markdown e Highlight.js */
-.message-content pre {
-    background-color: #2e2e2e;
-    padding: 15px;
-    border-radius: 5px;
-    overflow-x: auto;
-    margin: 10px 0;
-    border-left: 3px solid #056162;
-    max-height: 500px;
-    overflow-y: auto;
-}
-
-.message-content code {
-    background-color: #2e2e2e;
-    padding: 2px 6px;
-    border-radius: 3px;
-    color: #a8ff60;
-    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-    font-size: 0.9em;
-}
-
-.message-content pre code {
-    padding: 0;
-    background: none;
-    display: block;
-    color: #f8f8f2;
-}
-
-/* Kubernetes YAML highlighting */
-.message-content pre code.language-yaml,
-.message-content pre code.language-yml {
-    color: #f8f8f2;
-    line-height: 1.6;
-}
-
-/* Headers em Markdown */
-.message-content h1,
-.message-content h2,
-.message-content h3,
-.message-content h4 {
-    margin-top: 15px;
-    margin-bottom: 10px;
-    color: #dcdcdc;
-}
-
-.message-content h1 {
-    font-size: 1.8em;
-    border-bottom: 2px solid #056162;
-    padding-bottom: 5px;
-}
-
-.message-content h2 {
-    font-size: 1.5em;
-    border-bottom: 1px solid #056162;
-    padding-bottom: 5px;
-}
-
-.message-content h3 {
-    font-size: 1.3em;
-}
-
-.message-content h4 {
-    font-size: 1.1em;
-}
-
-/* Listas */
-.message-content ul,
-.message-content ol {
-    margin: 10px 0;
-    padding-left: 25px;
-}
-
-.message-content li {
-    margin: 5px 0;
-}
-
-/* Links */
-.message-content a {
-    color: #4a9eff;
-    text-decoration: none;
-}
-
-.message-content a:hover {
-    text-decoration: underline;
-}
-
-/* Tabelas */
-.message-content table {
-    border-collapse: collapse;
-    width: 100%;
-    margin: 10px 0;
-}
-
-.message-content table th,
-.message-content table td {
-    border: 1px solid #555;
-    padding: 8px;
-    text-align: left;
-}
-
-.message-content table th {
-    background-color: #2a2b32;
-    font-weight: bold;
-}
-
-/* Blockquotes */
-.message-content blockquote {
-    border-left: 4px solid #056162;
-    margin: 10px 0;
-    padding-left: 15px;
-    color: #a0a0a0;
-    font-style: italic;
-}
-
-/* Horizontal rule */
-.message-content hr {
-    border: none;
-    border-top: 1px solid #555;
-    margin: 15px 0;
-}
-
-/* Scrollbar personalizada para code blocks */
-.message-content pre::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-}
-
-.message-content pre::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 4px;
-}
-
-.message-content pre::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.3);
-    border-radius: 4px;
-}
-
-.message-content pre::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.5);
-}
-
-/* Modo Escuro */
-body.dark-mode {
-    background-color: #121212;
-}
-
-body.dark-mode #sidebar {
-    background-color: #0d0d0d;
-    border-right-color: #222;
-}
-
-body.dark-mode #chat-container {
-    background-color: #121212;
-}
-
-body.dark-mode #chat-form {
-    background-color: #1c1c1c;
-    border-top-color: #222;
-}
-
-body.dark-mode #user-input {
-    background-color: #2a2b32;
-    border-color: #333;
-}
-
-body.dark-mode .assistant-message .message-content {
-    background-color: #2a2b32;
-}
-
-body.dark-mode #new-chat-button {
-    border-color: #444;
-}
-
-body.dark-mode #llm-provider-select {
-    background-color: #2a2b32;
-    border-color: #333;
-}
-
 /* ============================================
-   RESPONSIVIDADE - MOBILE FIRST
+   UPLOAD DE ARQUIVOS
    ============================================ */
 
-/* Tablets e dispositivos médios (max-width: 1024px) */
-@media (max-width: 1024px) {
-    #sidebar {
-        flex: 0 0 220px;
-    }
-
-    #messages {
-        padding: 60px 15px 15px 15px;
-    }
-
-    .message {
-        max-width: 85%;
-    }
-}
-
-/* Tablets pequenos (max-width: 768px) */
-@media (max-width: 768px) {
-    #main-container {
-        flex-direction: column;
-    }
-
-    #sidebar {
-        position: fixed;
-        left: 0;
-        top: 0;
-        bottom: 0;
-        z-index: 1000;
-        flex: 0 0 280px;
-        transform: translateX(-100%);
-        transition: transform 0.3s ease;
-        box-shadow: 2px 0 10px rgba(0,0,0,0.3);
-    }
-
-    body:not(.sidebar-hidden) #sidebar {
-        transform: translateX(0);
-    }
-
-    #chat-container {
-        width: 100%;
-    }
-
-    .top-bar {
-        padding: 15px;
-        background-color: rgba(32, 33, 35, 0.95);
-        backdrop-filter: blur(10px);
-    }
-
-    #toggle-sidebar-hidden {
-        display: block !important;
-    }
-
-    #messages {
-        padding: 70px 10px 10px 10px;
-        height: auto;
-        flex: 1 1 auto;
-    }
-
-    .message {
-        max-width: 90%;
-    }
-
-    .message-content {
-        padding: 12px;
-        font-size: 15px;
-    }
-
-    #chat-form {
-        max-height: 50vh;
-        padding: 15px 10px;
-    }
-
-    #user-input {
-        font-size: 16px;
-        padding: 10px;
-        max-height: 120px;
-    }
-
-    #file-preview-container {
-        max-height: 100px;
-    }
-
-    .form-actions {
-        flex-wrap: wrap;
-        gap: 10px;
-    }
-
-    #llm-provider-select {
-        order: -1;
-        width: 100%;
-        padding: 10px;
-        font-size: 14px;
-    }
-
-    .form-actions button {
-        font-size: 20px;
-        padding: 8px;
-    }
-
-    .code-block-wrapper pre {
-        padding-right: 50px;
-    }
-
-    .copy-button {
-        padding: 6px 10px;
-        font-size: 12px;
-        opacity: 0.8;
-    }
-
-    .copy-button::after {
-        content: '';
-        opacity: 0;
-    }
-
-    .copy-button:hover::after {
-        content: '';
-    }
-
-    .message-content pre {
-        max-height: 300px;
-    }
-
-    body:not(.sidebar-hidden)::before {
-        content: '';
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background-color: rgba(0, 0, 0, 0.5);
-        z-index: 999;
-        animation: fadeIn 0.3s ease;
-    }
-
-    @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-    }
-}
-
-/* Smartphones (max-width: 480px) */
-@media (max-width: 480px) {
-    #sidebar {
-        flex: 0 0 85vw;
-    }
-
-    .sidebar-header {
-        padding: 8px;
-    }
-
-    #new-chat-button {
-        font-size: 13px;
-        padding: 8px;
-    }
-
-    .chat-item {
-        padding: 8px;
-        font-size: 14px;
-    }
-
-    .chat-actions button {
-        font-size: 12px;
-    }
-
-    .message {
-        max-width: 95%;
-        margin-bottom: 15px;
-    }
-
-    .message-content {
-        padding: 10px;
-        font-size: 14px;
-        line-height: 1.5;
-    }
-
-    .message-content strong {
-        font-size: 13px;
-    }
-
-    #user-input {
-        min-height: 44px;
-        padding: 8px;
-        max-height: 100px;
-    }
-
-    .form-actions button {
-        font-size: 18px;
-        padding: 6px;
-        min-width: 40px;
-        min-height: 40px;
-    }
-
-    .message-content pre {
-        overflow-x: auto;
-        font-size: 12px;
-        padding: 8px;
-    }
-
-    .message-content code {
-        font-size: 12px;
-    }
-
-    #file-preview-container {
-        max-height: 80px;
-        font-size: 11px;
-    }
-
-    #file-preview-container li {
-        padding: 4px 8px;
-        font-size: 11px;
-    }
-
-    #chat-form {
-        padding: 10px 8px;
-    }
-
-    .copy-button {
-        top: 5px;
-        right: 5px;
-        padding: 5px 8px;
-        font-size: 11px;
-    }
-
-    .code-block-wrapper pre {
-        padding-right: 45px;
-    }
-}
-
-/* Smartphones muito pequenos (max-width: 360px) */
-@media (max-width: 360px) {
-    .top-bar {
-        padding: 10px;
-    }
-
-    .top-button {
-        font-size: 18px;
-    }
-
-    #messages {
-        padding: 60px 8px 8px 8px;
-    }
-
-    .message-content {
-        padding: 8px;
-        font-size: 13px;
-    }
-
-    #llm-provider-select {
-        font-size: 13px;
-        padding: 8px;
-    }
-}
-
-/* Landscape mode em smartphones */
-@media (max-height: 500px) and (orientation: landscape) {
-    #messages {
-        padding: 50px 10px 10px 10px;
-    }
-
-    #user-input {
-        max-height: 60px;
-    }
-
-    #sidebar {
-        flex: 0 0 50vw;
-    }
-
-    #chat-form {
-        max-height: 35vh;
-    }
-}
-
-/* Touch devices - áreas clicáveis maiores */
-@media (hover: none) and (pointer: coarse) {
-    .chat-item {
-        min-height: 44px;
-    }
-
-    .chat-actions button {
-        min-width: 44px;
-        min-height: 44px;
-        padding: 10px;
-    }
-
-    .form-actions button {
-        min-width: 44px;
-        min-height: 44px;
-    }
-}
-
-/* ============================================
-   ESTILOS PARA UPLOAD DE ARQUIVOS AVANÇADO
-   ============================================ */
-
-/* Container de preview de arquivos melhorado */
 #file-preview-container {
     display: none;
     background: linear-gradient(135deg, #2a2b32 0%, #1f2027 100%);
@@ -1015,6 +813,7 @@ body.dark-mode #llm-provider-select {
     margin-bottom: 8px;
     border-left: 3px solid #056162;
     transition: all 0.2s;
+    animation: fadeIn 0.3s ease;
 }
 
 .file-item:hover {
@@ -1086,33 +885,89 @@ body.dark-mode #llm-provider-select {
     color: #f44336;
 }
 
-/* Barra de progresso */
+.file-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.file-list::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 3px;
+}
+
+.file-list::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+}
+
+.file-list::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.5);
+}
+
+/* ============================================
+   BARRA DE PROGRESSO
+   ============================================ */
+
 .progress-container {
-    margin-top: 10px;
+    width: 100%;
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 0;
+    box-sizing: border-box;
 }
 
 .progress-text {
-    font-size: 12px;
     color: #dcdcdc;
-    margin-bottom: 8px;
+    font-size: 13px;
+    margin-bottom: 10px;
+    font-weight: 500;
+    text-align: center;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    padding: 0 10px;
+    box-sizing: border-box;
 }
 
 .progress-bar {
     width: 100%;
-    height: 6px;
+    max-width: 100%;
+    height: 8px;
     background-color: rgba(255, 255, 255, 0.1);
-    border-radius: 3px;
+    border-radius: 4px;
     overflow: hidden;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+    box-sizing: border-box;
+    margin: 0 auto;
 }
 
 .progress-bar-fill {
     height: 100%;
     background: linear-gradient(90deg, #4CAF50 0%, #8BC34A 100%);
-    border-radius: 3px;
+    border-radius: 4px;
     transition: width 0.3s ease;
+    box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
-/* Status de conexão */
+/* Correção específica para quando dentro de system-message */
+.system-message .progress-container,
+.progress-message .progress-container {
+    width: 100%;
+    max-width: 600px; /* Limita largura máxima */
+    margin: 0 auto;
+    padding: 0;
+}
+
+.system-message .progress-bar,
+.progress-message .progress-bar {
+    width: 100%;
+    max-width: 100%;
+}
+
+/* ============================================
+   STATUS DE CONEXÃO
+   ============================================ */
+
 .connection-status {
     display: flex;
     align-items: center;
@@ -1134,10 +989,9 @@ body.dark-mode #llm-provider-select {
     font-size: 10px;
 }
 
-/* Drag and drop */
-#chat-container.drag-over {
-    position: relative;
-}
+/* ============================================
+   DRAG AND DROP
+   ============================================ */
 
 #chat-container.drag-over::before {
     content: '📎 Solte os arquivos aqui';
@@ -1159,27 +1013,272 @@ body.dark-mode #llm-provider-select {
     border-radius: 10px;
 }
 
-/* Scrollbar para lista de arquivos */
-.file-list::-webkit-scrollbar {
-    width: 6px;
+/* Garante que nada ultrapasse os limites */
+#messages * {
+    box-sizing: border-box;
 }
 
-.file-list::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 3px;
+/* Força contenção em todos os elementos de mensagem */
+.message,
+.message * {
+    max-width: 100%;
 }
 
-.file-list::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.3);
-    border-radius: 3px;
+/* System message tem regras especiais */
+.system-message,
+.system-message *,
+.progress-message,
+.progress-message * {
+    max-width: 100% !important;
 }
 
-.file-list::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.5);
+/* Previne overflow em elementos inline */
+.message-content > * {
+    max-width: 100%;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
 }
 
-/* Responsividade mobile para preview de arquivos */
+/* Garante que divs internas não causem overflow */
+.message-content div {
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+/* Flex containers dentro de mensagens */
+.message-content [style*="display: flex"],
+.message-content [style*="display:flex"] {
+    flex-wrap: wrap;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+/* ============================================
+   INDICADOR DE DIGITAÇÃO
+   ============================================ */
+
+.typing-indicator {
+    display: inline-flex;
+    gap: 4px;
+    margin-left: 8px;
+}
+
+.typing-indicator span {
+    width: 8px;
+    height: 8px;
+    background-color: #999;
+    border-radius: 50%;
+    animation: typing-blink 1.4s infinite both;
+}
+
+.typing-indicator span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.typing-indicator span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes typing-blink {
+    0% { opacity: 0.2; transform: scale(0.8); }
+    20% { opacity: 1; transform: scale(1); }
+    100% { opacity: 0.2; transform: scale(0.8); }
+}
+
+.typing-content {
+    display: inline;
+}
+
+.typing-content::after {
+    content: '▌';
+    animation: cursor-blink 1s step-end infinite;
+    margin-left: 2px;
+    color: #056162;
+}
+
+@keyframes cursor-blink {
+    50% { opacity: 0; }
+}
+
+.typing-content.complete::after {
+    display: none;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ============================================
+   MODO ESCURO
+   ============================================ */
+
+body.dark-mode {
+    background-color: #121212;
+}
+
+body.dark-mode #sidebar {
+    background-color: #0d0d0d;
+    border-right-color: #222;
+}
+
+body.dark-mode #chat-container {
+    background-color: #121212;
+}
+
+body.dark-mode #chat-form {
+    background-color: #1c1c1c;
+    border-top-color: #222;
+}
+
+body.dark-mode #user-input {
+    background-color: #2a2b32;
+    border-color: #333;
+}
+
+body.dark-mode .assistant-message .message-content {
+    background-color: #2a2b32;
+}
+
+body.dark-mode #new-chat-button {
+    border-color: #444;
+}
+
+body.dark-mode #llm-provider-select {
+    background-color: #2a2b32;
+    border-color: #333;
+}
+
+body.dark-mode #file-preview-container {
+    background: linear-gradient(135deg, #1a1b1f 0%, #121316 100%);
+    border-color: #333;
+}
+
+body.dark-mode .file-preview-header {
+    background-color: rgba(0, 0, 0, 0.4);
+    border-bottom-color: #333;
+}
+
+body.dark-mode .file-item {
+    background-color: rgba(40, 40, 50, 0.4);
+}
+
+body.dark-mode .file-item:hover {
+    background-color: rgba(40, 40, 50, 0.6);
+}
+
+body.dark-mode .system-message .message-content {
+    background-color: #1a1b1f;
+    border-left-color: #2196F3;
+}
+
+body.dark-mode .progress-message .message-content {
+    background: linear-gradient(135deg, #1a1b1f 0%, #141519 100%);
+    border-left-color: #4CAF50;
+}
+
+/* ============================================
+   RESPONSIVIDADE - TABLETS (max-width: 1024px)
+   ============================================ */
+
+@media (max-width: 1024px) {
+    #sidebar {
+        flex: 0 0 220px;
+    }
+
+    #messages {
+        padding: 60px 15px 15px 15px;
+    }
+
+    .message {
+        max-width: 85%;
+    }
+}
+
+/* ============================================
+   RESPONSIVIDADE - TABLETS PEQUENOS (max-width: 768px)
+   ============================================ */
+
 @media (max-width: 768px) {
+    #main-container {
+        flex-direction: column;
+    }
+
+    #sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        z-index: 1000;
+        flex: 0 0 280px;
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+        box-shadow: 2px 0 10px rgba(0,0,0,0.3);
+    }
+
+    body:not(.sidebar-hidden) #sidebar {
+        transform: translateX(0);
+    }
+
+    #chat-container {
+        width: 100%;
+    }
+
+    .top-bar {
+        padding: 15px;
+        background-color: rgba(32, 33, 35, 0.95);
+        backdrop-filter: blur(10px);
+    }
+
+    #toggle-sidebar-hidden {
+        display: block !important;
+    }
+
+    #messages {
+        padding: 70px 10px 10px 10px;
+        height: auto;
+        flex: 1 1 auto;
+    }
+
+    .message {
+        max-width: 90%;
+    }
+
+    .message-content {
+        padding: 12px;
+        font-size: 15px;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+    }
+
+    .message-content pre {
+        padding: 10px;
+        font-size: 13px;
+        max-height: 300px;
+    }
+
+    .message-content code {
+        font-size: 12px;
+        word-break: break-all;
+    }
+
+    #chat-form {
+        max-height: 50vh;
+        padding: 15px 10px;
+    }
+
+    #user-input {
+        font-size: 16px;
+        padding: 10px;
+        max-height: 120px;
+    }
+
     #file-preview-container {
         max-height: 180px;
     }
@@ -1188,33 +1287,133 @@ body.dark-mode #llm-provider-select {
         max-height: 120px;
     }
 
-    .file-preview-header {
+    .form-actions {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    #llm-provider-select {
+        order: -1;
+        width: 100%;
         padding: 10px;
+        font-size: 14px;
     }
 
-    .file-item {
-        padding: 8px 10px;
-    }
-
-    .file-icon {
+    .form-actions button {
         font-size: 20px;
+        padding: 8px;
     }
 
-    .file-name {
+    .code-block-wrapper pre {
+        padding-right: 50px;
+    }
+
+    .copy-button {
+        padding: 6px 10px;
+        font-size: 12px;
+        opacity: 0.8;
+    }
+
+    .copy-button::after {
+        content: '';
+        opacity: 0;
+    }
+
+    .copy-button:hover::after {
+        content: '';
+    }
+
+    body:not(.sidebar-hidden)::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 999;
+        animation: fadeIn 0.3s ease;
+    }
+
+    .system-message .message-content {
+        font-size: 12px;
+        padding: 10px 15px;
+    }
+
+    .progress-text {
         font-size: 12px;
     }
 
-    .file-type-badge {
-        font-size: 9px;
-        padding: 1px 6px;
-    }
-
-    .file-size-text {
-        font-size: 10px;
+    .progress-bar {
+        height: 6px;
     }
 }
 
+/* ============================================
+   RESPONSIVIDADE - SMARTPHONES (max-width: 480px)
+   ============================================ */
+
 @media (max-width: 480px) {
+    #sidebar {
+        flex: 0 0 85vw;
+    }
+
+    .sidebar-header {
+        padding: 8px;
+    }
+
+    #new-chat-button {
+        font-size: 13px;
+        padding: 8px;
+    }
+
+    .chat-item {
+        padding: 8px;
+        font-size: 14px;
+    }
+
+    .chat-actions button {
+        font-size: 12px;
+    }
+
+    .message {
+        max-width: 95%;
+        margin-bottom: 15px;
+    }
+
+    .message-content {
+        padding: 10px;
+        font-size: 14px;
+        line-height: 1.5;
+    }
+
+    .message-content strong {
+        font-size: 13px;
+    }
+
+    #user-input {
+        min-height: 44px;
+        padding: 8px;
+        max-height: 100px;
+    }
+
+    .form-actions button {
+        font-size: 18px;
+        padding: 6px;
+        min-width: 40px;
+        min-height: 40px;
+    }
+
+    .message-content pre {
+        overflow-x: auto;
+        font-size: 12px;
+        padding: 8px;
+    }
+
+    .message-content code {
+        font-size: 12px;
+    }
+
     #file-preview-container {
         max-height: 150px;
         margin-bottom: 8px;
@@ -1257,44 +1456,107 @@ body.dark-mode #llm-provider-select {
         flex-wrap: wrap;
         gap: 4px;
     }
-}
 
-/* Animações */
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(-10px);
+    #chat-form {
+        padding: 10px 8px;
     }
-    to {
-        opacity: 1;
-        transform: translateY(0);
+
+    .copy-button {
+        top: 5px;
+        right: 5px;
+        padding: 5px 8px;
+        font-size: 11px;
+    }
+
+    .code-block-wrapper pre {
+        padding-right: 45px;
+    }
+
+    .system-message .message-content {
+        font-size: 11px;
+        padding: 8px 12px;
+    }
+
+    .system-message .message-content i {
+        font-size: 14px;
     }
 }
 
-.file-item {
-    animation: fadeIn 0.3s ease;
+/* ============================================
+   SMARTPHONES MUITO PEQUENOS (max-width: 360px)
+   ============================================ */
+
+@media (max-width: 360px) {
+    .top-bar {
+        padding: 10px;
+    }
+
+    .top-button {
+        font-size: 18px;
+    }
+
+    #messages {
+        padding: 60px 8px 8px 8px;
+    }
+
+    .message-content {
+        padding: 8px;
+        font-size: 13px;
+    }
+
+    #llm-provider-select {
+        font-size: 13px;
+        padding: 8px;
+    }
 }
 
-/* Dark mode ajustes */
-body.dark-mode #file-preview-container {
-    background: linear-gradient(135deg, #1a1b1f 0%, #121316 100%);
-    border-color: #333;
+/* ============================================
+   LANDSCAPE MODE EM SMARTPHONES
+   ============================================ */
+
+@media (max-height: 500px) and (orientation: landscape) {
+    #messages {
+        padding: 50px 10px 10px 10px;
+    }
+
+    #user-input {
+        max-height: 60px;
+    }
+
+    #sidebar {
+        flex: 0 0 50vw;
+    }
+
+    #chat-form {
+        max-height: 35vh;
+    }
 }
 
-body.dark-mode .file-preview-header {
-    background-color: rgba(0, 0, 0, 0.4);
-    border-bottom-color: #333;
+/* ============================================
+   TOUCH DEVICES - ÁREAS CLICÁVEIS MAIORES
+   ============================================ */
+
+@media (hover: none) and (pointer: coarse) {
+    .chat-item {
+        min-height: 44px;
+    }
+
+    .chat-actions button {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 10px;
+    }
+
+    .form-actions button {
+        min-width: 44px;
+        min-height: 44px;
+    }
 }
 
-body.dark-mode .file-item {
-    background-color: rgba(40, 40, 50, 0.4);
-}
+/* ============================================
+   BOTÃO DE AJUDA DE ATALHOS
+   ============================================ */
 
-body.dark-mode .file-item:hover {
-    background-color: rgba(40, 40, 50, 0.6);
-}
-
-/* Botão de ajuda de atalhos */
 .keyboard-help-button {
     position: fixed;
     bottom: 20px;
@@ -1332,4 +1594,41 @@ body.dark-mode .file-item:hover {
         right: 15px;
         font-size: 18px;
     }
+}
+
+/* Indicador de carregamento melhorado */
+#loading-indicator .message-content {
+    background: linear-gradient(90deg, #444654 0%, #4a4b58 50%, #444654 100%);
+    background-size: 200% 100%;
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* Otimizações de performance */
+.typing-content {
+    will-change: contents;
+    contain: content;
+}
+
+.message-content {
+    contain: layout style;
+}
+
+#messages {
+    contain: layout;
+}
+
+/* Smooth scroll nativo */
+#messages {
+    scroll-behavior: auto; /* Removido smooth para performance */
+}
+
+/* Reduz repaints */
+.message {
+    transform: translateZ(0);
+    backface-visibility: hidden;
 }

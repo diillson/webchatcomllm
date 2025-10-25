@@ -1,3 +1,8 @@
+/**
+ * Chat com LLM - Cliente JavaScript
+ * Versão com Gerenciamento Robusto de Conexão WebSocket
+ */
+
 document.addEventListener('DOMContentLoaded', () => {
     // ============================================
     // ELEMENTOS DO DOM
@@ -22,13 +27,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // ESTADO DA APLICAÇÃO
     // ============================================
     let currentChatID = null;
-    let ws = null;
-    let isConnected = false;
+    let connectionManager = null;
     let assistantName = "Assistente";
     let attachedFiles = [];
     let processingFiles = false;
 
-    // CORREÇÃO FIREFOX: Mapeamento de provedores
+    // Mapeamento de provedores
     const providerMap = new Map();
 
     // Detecção de browser
@@ -103,6 +107,251 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const MAX_TOTAL_SIZE = 50 * 1024 * 1024;
     const MAX_FILES = 50;
+
+    // ============================================
+    // GERENCIADOR DE CONEXÃO WEBSOCKET
+    // ============================================
+    class ConnectionManager {
+        constructor(config = {}) {
+            this.config = {
+                wsUrl: this.getWebSocketURL(),
+                maxReconnectAttempts: 10,
+                initialBackoff: 1000,
+                maxBackoff: 30000,
+                pingInterval: 30000,
+                pongTimeout: 60000,
+                ...config
+            };
+
+            this.ws = null;
+            this.state = 'disconnected';
+            this.reconnectAttempts = 0;
+            this.reconnectTimer = null;
+            this.pingTimer = null;
+            this.lastPong = Date.now();
+            this.messageQueue = [];
+            this.eventHandlers = new Map();
+        }
+
+        getWebSocketURL() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            return `${protocol}//${window.location.host}/ws`;
+        }
+
+        connect() {
+            if (this.state === 'connecting' || this.state === 'connected') {
+                console.log('⚠️ Já conectando ou conectado');
+                return;
+            }
+
+            this.setState('connecting');
+            console.log('🔌 Conectando WebSocket...', this.config.wsUrl);
+
+            try {
+                this.ws = new WebSocket(this.config.wsUrl);
+                this.setupEventHandlers();
+            } catch (error) {
+                console.error('❌ Erro ao criar WebSocket:', error);
+                this.handleReconnect();
+            }
+        }
+
+        setupEventHandlers() {
+            this.ws.onopen = () => this.handleOpen();
+            this.ws.onmessage = (event) => this.handleMessage(event);
+            this.ws.onclose = (event) => this.handleClose(event);
+            this.ws.onerror = (error) => this.handleError(error);
+        }
+
+        handleOpen() {
+            console.log('✅ WebSocket conectado');
+            this.setState('connected');
+            this.reconnectAttempts = 0;
+            this.lastPong = Date.now();
+
+            // Inicia ping/pong
+            this.startPingPong();
+
+            // Reenvia mensagens da fila
+            this.flushMessageQueue();
+
+            this.emit('connected');
+        }
+
+        handleMessage(event) {
+            try {
+                const data = JSON.parse(event.data);
+
+                if (data.type === 'pong') {
+                    this.lastPong = Date.now();
+                    return;
+                }
+
+                this.emit('message', data);
+            } catch (error) {
+                console.error('❌ Erro ao processar mensagem:', error);
+            }
+        }
+
+        handleClose(event) {
+            console.log('🔌 WebSocket fechado', {
+                code: event.code,
+                reason: event.reason,
+                wasClean: event.wasClean
+            });
+
+            this.stopPingPong();
+            this.setState('disconnected');
+
+            // Reconexão automática
+            if (event.code !== 1000) {
+                this.handleReconnect();
+            }
+
+            this.emit('disconnected', event);
+        }
+
+        handleError(error) {
+            console.error('❌ Erro no WebSocket:', error);
+            this.emit('error', error);
+        }
+
+        handleReconnect() {
+            if (this.reconnectAttempts >= this.config.maxReconnectAttempts) {
+                console.error('❌ Máximo de tentativas de reconexão atingido');
+                this.setState('failed');
+                this.emit('failed');
+                return;
+            }
+
+            this.setState('reconnecting');
+            this.reconnectAttempts++;
+
+            const backoff = Math.min(
+                this.config.initialBackoff * Math.pow(2, this.reconnectAttempts - 1),
+                this.config.maxBackoff
+            );
+
+            console.log(`🔄 Reconectando em ${backoff}ms (tentativa ${this.reconnectAttempts})...`);
+
+            this.reconnectTimer = setTimeout(() => {
+                this.connect();
+            }, backoff);
+
+            this.emit('reconnecting', { attempt: this.reconnectAttempts, backoff });
+        }
+
+        startPingPong() {
+            this.stopPingPong();
+
+            this.pingTimer = setInterval(() => {
+                if (this.state !== 'connected') {
+                    return;
+                }
+
+                // Verifica timeout de pong
+                if (Date.now() - this.lastPong > this.config.pongTimeout) {
+                    console.warn('⚠️ Pong timeout, reconectando...');
+                    this.ws.close(1006, 'Pong timeout');
+                    return;
+                }
+
+                // Envia ping
+                this.send({ type: 'ping' });
+            }, this.config.pingInterval);
+        }
+
+        stopPingPong() {
+            if (this.pingTimer) {
+                clearInterval(this.pingTimer);
+                this.pingTimer = null;
+            }
+        }
+
+        send(data) {
+            if (this.state !== 'connected') {
+                console.warn('⚠️ Não conectado, adicionando à fila');
+                this.messageQueue.push(data);
+                return false;
+            }
+
+            try {
+                this.ws.send(JSON.stringify(data));
+                return true;
+            } catch (error) {
+                console.error('❌ Erro ao enviar:', error);
+                this.messageQueue.push(data);
+                return false;
+            }
+        }
+
+        flushMessageQueue() {
+            if (this.messageQueue.length === 0) return;
+
+            console.log(`📤 Reenviando ${this.messageQueue.length} mensagem(ns) da fila`);
+
+            while (this.messageQueue.length > 0) {
+                const message = this.messageQueue.shift();
+                this.send(message);
+            }
+        }
+
+        setState(newState) {
+            const oldState = this.state;
+            this.state = newState;
+
+            if (oldState !== newState) {
+                console.log(`🔄 Estado: ${oldState} → ${newState}`);
+                this.emit('stateChange', { oldState, newState });
+            }
+        }
+
+        on(event, handler) {
+            if (!this.eventHandlers.has(event)) {
+                this.eventHandlers.set(event, []);
+            }
+            this.eventHandlers.get(event).push(handler);
+        }
+
+        off(event, handler) {
+            if (!this.eventHandlers.has(event)) return;
+            const handlers = this.eventHandlers.get(event);
+            const index = handlers.indexOf(handler);
+            if (index > -1) {
+                handlers.splice(index, 1);
+            }
+        }
+
+        emit(event, data) {
+            if (!this.eventHandlers.has(event)) return;
+            this.eventHandlers.get(event).forEach(handler => {
+                try {
+                    handler(data);
+                } catch (error) {
+                    console.error(`Erro no handler de ${event}:`, error);
+                }
+            });
+        }
+
+        close() {
+            console.log('🔌 Fechando conexão manualmente');
+            this.stopPingPong();
+
+            if (this.reconnectTimer) {
+                clearTimeout(this.reconnectTimer);
+            }
+
+            if (this.ws) {
+                this.ws.close(1000, 'Client closing');
+            }
+
+            this.setState('closed');
+        }
+
+        getState() {
+            return this.state;
+        }
+    }
 
     // ============================================
     // INICIALIZAÇÃO DO MAPA DE PROVEDORES
@@ -196,8 +445,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ============================================
-    // ATUALIZAR NOME DO ASSISTENTE
-    // ============================================
+// ATUALIZAR NOME DO ASSISTENTE
+// ============================================
     function updateAssistantName() {
         const provider = getSelectedProvider();
         if (provider && provider.text) {
@@ -209,9 +458,41 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // ============================================
-    // INICIALIZAÇÃO
-    // ============================================
+// ============================================
+// INICIALIZAÇÃO DA CONEXÃO WEBSOCKET
+// ============================================
+    function initializeWebSocket() {
+        connectionManager = new ConnectionManager();
+
+        connectionManager.on('connected', () => {
+            updateConnectionStatus(true);
+            console.log('✅ Conexão estabelecida');
+        });
+
+        connectionManager.on('disconnected', () => {
+            updateConnectionStatus(false);
+        });
+
+        connectionManager.on('reconnecting', (data) => {
+            console.log(`🔄 Reconectando (tentativa ${data.attempt})...`);
+            showNotification(`Reconectando... (tentativa ${data.attempt})`, 'info', 2000);
+        });
+
+        connectionManager.on('failed', () => {
+            showNotification('❌ Falha na conexão. Recarregue a página.', 'error', 5000);
+        });
+
+        connectionManager.on('message', (data) => {
+            handleServerMessage(data);
+        });
+
+        // Conecta
+        connectionManager.connect();
+    }
+
+// ============================================
+// INICIALIZAÇÃO
+// ============================================
     function initialize() {
         loadUserTheme();
         loadChatList();
@@ -225,7 +506,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ensureProviderSelected();
         updateAssistantName();
 
-        connectWebSocket();
+        initializeWebSocket();
         addEventListeners();
 
         setupMobileInteractions();
@@ -244,9 +525,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // ============================================
-    // EVENT LISTENERS
-    // ============================================
+// ============================================
+// EVENT LISTENERS
+// ============================================
     function addEventListeners() {
         chatForm.addEventListener('submit', handleFormSubmit);
         userInput.addEventListener('input', autoResizeTextarea);
@@ -283,104 +564,17 @@ document.addEventListener('DOMContentLoaded', () => {
         setupDragAndDrop();
     }
 
-    // ============================================
-    // WEBSOCKET
-    // ============================================
-    function connectWebSocket() {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsURL = `${protocol}//${window.location.host}/ws`;
-
-        console.log('🔌 Tentando conectar WebSocket:', wsURL);
-
-        try {
-            if (browser === 'firefox') {
-                ws = new WebSocket(wsURL, ['chat']);
-            } else {
-                ws = new WebSocket(wsURL);
-            }
-
-            let connectionTimeout = setTimeout(() => {
-                if (!isConnected) {
-                    console.warn('⚠️ WebSocket não conectou em 5 segundos');
-                    ws.close();
-                }
-            }, 5000);
-
-            ws.onopen = () => {
-                clearTimeout(connectionTimeout);
-                isConnected = true;
-                console.log('✅ WebSocket conectado com sucesso');
-                updateConnectionStatus(true);
-
-                if (browser === 'firefox') {
-                    ws.send(JSON.stringify({ type: 'ping' }));
-                }
-            };
-
-            ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-
-                    if (data.type === 'ping' || data.type === 'pong') {
-                        return;
-                    }
-
-                    handleServerMessage(data);
-                } catch (error) {
-                    console.error('❌ Erro ao processar mensagem:', error);
-                    console.error('Dados recebidos:', event.data);
-                }
-            };
-
-            ws.onclose = (event) => {
-                clearTimeout(connectionTimeout);
-                isConnected = false;
-                console.log('🔌 WebSocket desconectado');
-                console.log('   Código:', event.code);
-                console.log('   Razão:', event.reason);
-                console.log('   Clean:', event.wasClean);
-
-                updateConnectionStatus(false);
-
-                if (event.wasClean && event.code === 1000) {
-                    console.log('✅ Fechamento normal, não reconecta');
-                    return;
-                }
-
-                setTimeout(() => {
-                    console.log('🔄 Tentando reconectar...');
-                    connectWebSocket();
-                }, 3000);
-            };
-
-            ws.onerror = (error) => {
-                console.error('❌ Erro no WebSocket:', error);
-                updateConnectionStatus(false);
-            };
-
-            if (browser === 'firefox') {
-                setInterval(() => {
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        try {
-                            ws.send(JSON.stringify({ type: 'ping' }));
-                        } catch (e) {
-                            console.warn('Erro ao enviar ping:', e);
-                        }
-                    }
-                }, 30000);
-            }
-
-        } catch (error) {
-            console.error('❌ Erro ao criar WebSocket:', error);
-            setTimeout(() => {
-                console.log('🔄 Tentando reconectar após erro...');
-                connectWebSocket();
-            }, 3000);
-        }
-    }
-
+// ============================================
+// MANIPULAÇÃO DE MENSAGENS DO SERVIDOR
+// ============================================
     function handleServerMessage(data) {
         removeLastMessageIfTyping();
+        removeLoadingIndicator();
+
+        if (data.type === 'progress') {
+            updateProcessingProgress(data);
+            return;
+        }
 
         if (data.status === 'completed') {
             const isMarkdown = data.isMarkdown !== undefined ? data.isMarkdown : true;
@@ -392,16 +586,62 @@ document.addEventListener('DOMContentLoaded', () => {
                 preview: data.response.substring(0, 100)
             });
 
+            removeProgressMessage();
+
+            // SEMPRE usar o efeito de digitação avançado
             addMessageWithTypingEffect(assistantName, data.response, 'assistant-message', isMarkdown, true);
+
         } else if (data.status === 'error') {
+            removeProgressMessage();
             addMessage('Erro', data.response, 'error-message', false, false);
-        } else if (data.status === 'processing') {
-            updateProcessingProgress(data);
         }
     }
 
+    function addMessageDirect(sender, text, messageClass, isMarkdown = false, save = false) {
+        const messageElement = document.createElement('div');
+        messageElement.classList.add('message', messageClass);
+        const contentElement = document.createElement('div');
+        contentElement.classList.add('message-content');
+
+        let cleanHtml;
+        if (isMarkdown) {
+            const parsed = marked.parse(text);
+            cleanHtml = DOMPurify.sanitize(parsed);
+        } else {
+            // Escapa HTML para texto puro
+            const tempDiv = document.createElement('div');
+            tempDiv.textContent = text;
+            cleanHtml = tempDiv.innerHTML.replace(/\n/g, "<br>");
+        }
+
+        contentElement.innerHTML = `<strong>${sender}:</strong> ${cleanHtml}`;
+
+        messageElement.appendChild(contentElement);
+        messagesDiv.appendChild(messageElement);
+
+        // Aplica syntax highlighting e botões de cópia após a inserção
+        if (isMarkdown) {
+            contentElement.querySelectorAll('pre code').forEach(block => {
+                if (!block.classList.contains('hljs')) {
+                    hljs.highlightElement(block);
+                }
+            });
+            contentElement.querySelectorAll('pre').forEach(pre => {
+                if (!pre.closest('.code-block-wrapper')) {
+                    addCopyButton(pre);
+                }
+            });
+        }
+
+        scrollToBottom('auto'); // Scroll imediato
+
+        if (save) saveMessage(sender, text, isMarkdown);
+
+        return contentElement;
+    }
+
     function updateProcessingProgress(data) {
-        const progressMessage = messagesDiv.querySelector('.progress-message');
+        let progressMessage = messagesDiv.querySelector('.progress-message');
 
         if (progressMessage) {
             const progressBar = progressMessage.querySelector('.progress-bar-fill');
@@ -420,31 +660,36 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function addProgressMessage(message, percentage) {
+        // Remove mensagem de progresso anterior se existir
+        const existingProgress = messagesDiv.querySelector('.progress-message');
+        if (existingProgress) {
+            existingProgress.remove();
+        }
+
         const messageElement = document.createElement('div');
         messageElement.classList.add('message', 'system-message', 'progress-message');
 
         const contentElement = document.createElement('div');
         contentElement.classList.add('message-content');
         contentElement.innerHTML = `
-                <strong>Sistema:</strong>
-                <div class="progress-container">
-                    <div class="progress-text">${message}</div>
-                    <div class="progress-bar">
-                        <div class="progress-bar-fill" style="width: ${percentage}%"></div>
-                    </div>
+            <div style="width: 100%; max-width: 600px; margin: 0 auto;">
+                <div class="progress-text" style="margin-bottom: 10px; text-align: center; font-size: 13px;">
+                    ${message}
                 </div>
-            `;
+                <div class="progress-bar" style="width: 100%; height: 8px; background-color: rgba(255, 255, 255, 0.1); border-radius: 4px; overflow: hidden;">
+                    <div class="progress-bar-fill" style="height: 100%; width: ${percentage}%; background: linear-gradient(90deg, #4CAF50 0%, #8BC34A 100%); border-radius: 4px; transition: width 0.3s ease;"></div>
+                </div>
+            </div>
+        `;
 
         messageElement.appendChild(contentElement);
         messagesDiv.appendChild(messageElement);
-        scrollToBottom();
+        scrollToBottom('auto');
     }
 
     function removeProgressMessage() {
-        const progressMessage = messagesDiv.querySelector('.progress-message');
-        if (progressMessage) {
-            progressMessage.remove();
-        }
+        const progressMessages = messagesDiv.querySelectorAll('.progress-message');
+        progressMessages.forEach(msg => msg.remove());
     }
 
     function updateConnectionStatus(connected) {
@@ -456,12 +701,17 @@ document.addEventListener('DOMContentLoaded', () => {
             statusDiv.className = 'connection-status offline';
             statusDiv.innerHTML = '<i class="fas fa-exclamation-circle"></i> Desconectado';
             document.querySelector('.top-bar').appendChild(statusDiv);
+        } else {
+            // Remove status quando conectar
+            if (existingStatus) {
+                existingStatus.remove();
+            }
         }
     }
 
-    // ============================================
-    // ENVIO DE MENSAGENS
-    // ============================================
+// ============================================
+// ENVIO DE MENSAGENS
+// ============================================
     function handleFormSubmit(e) {
         e.preventDefault();
 
@@ -473,15 +723,25 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (!isConnected) {
-            console.error('❌ WebSocket não conectado');
-            addMessage('Erro', 'Conexão perdida. Tentando reconectar...', 'error-message', false, false);
+        // VALIDAÇÃO DE CONEXÃO
+        const connState = connectionManager.getState();
+        if (connState !== 'connected') {
+            console.error('❌ WebSocket não conectado, estado:', connState);
+            addMessage('Erro', `Conexão perdida (${connState}). Aguarde a reconexão...`, 'error-message', false, false);
             return;
         }
 
+        // VALIDAÇÃO DE PROVEDOR ANTES DE TUDO
         const provider = getSelectedProvider();
         if (!provider || !provider.value) {
             console.error('❌ Nenhum provedor selecionado no submit');
+            console.error('Debug:', {
+                llmProviderSelect: !!llmProviderSelect,
+                selectedIndex: llmProviderSelect?.selectedIndex,
+                optionsCount: llmProviderSelect?.options?.length,
+                providerFromMap: providerMap.get(llmProviderSelect?.selectedIndex)
+            });
+
             addMessage('Erro', 'Selecione um provedor LLM antes de enviar.', 'error-message', false, false);
             ensureProviderSelected();
             return;
@@ -489,17 +749,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
         console.log('✅ Validações passaram, provedor:', provider);
 
+        // Adiciona mensagem do usuário
         if (message) addMessage('Você', message, 'user-message', false, true);
 
+        // Notifica sobre arquivos
         if (attachedFiles.length > 0) {
             const totalSize = attachedFiles.reduce((sum, f) => sum + f.size, 0);
-            addMessage('Sistema',
-                `📎 Enviando ${attachedFiles.length} arquivo(s) (${formatSize(totalSize)}) para análise...`,
-                'system-message', false, false);
+
+            const uploadMessage = document.createElement('div');
+            uploadMessage.classList.add('message', 'system-message');
+            const uploadContent = document.createElement('div');
+            uploadContent.classList.add('message-content');
+            uploadContent.innerHTML = `
+            <div style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                <i class="fas fa-paperclip" style="color: #2196F3;"></i>
+                <span>Enviando ${attachedFiles.length} arquivo(s) (${formatSize(totalSize)}) para análise...</span>
+            </div>
+        `;
+            uploadMessage.appendChild(uploadContent);
+            messagesDiv.appendChild(uploadMessage);
+            scrollToBottom('auto');
         }
 
+        // ENVIA MENSAGEM
         sendMessageToServer(message);
 
+        showLoadingIndicator('Aguardando resposta...');
+
+        // Limpa input
         userInput.value = '';
         userInput.style.height = 'auto';
         attachedFiles = [];
@@ -507,51 +784,104 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function sendMessageToServer(message) {
-        if (!ws || ws.readyState !== WebSocket.OPEN) {
-            console.error('❌ WebSocket não está aberto');
+        // Validação do estado da conexão
+        if (connectionManager.getState() !== 'connected') {
+            console.error('❌ WebSocket não conectado');
             addMessage('Erro', 'Conexão perdida. Reconectando...', 'error-message', false, false);
-            connectWebSocket();
+
+            // Adiciona à fila com TODOS os campos necessários
+            const provider = getSelectedProvider();
+            if (provider && provider.value) {
+                connectionManager.messageQueue.push({
+                    provider: provider.value,
+                    model: provider.model || "",
+                    prompt: message,
+                    history: getConversationHistory(),
+                    files: attachedFiles.slice() // Clona o array
+                });
+            }
             return;
         }
 
         const history = getConversationHistory();
         const provider = getSelectedProvider();
 
+        // VALIDAÇÃO CRÍTICA
         if (!provider || !provider.value) {
             console.error('❌ Provedor inválido ao enviar');
+            console.error('Estado do select:', {
+                selectedIndex: llmProviderSelect?.selectedIndex,
+                optionsCount: llmProviderSelect?.options?.length,
+                providerMapSize: providerMap.size
+            });
+
             addMessage('Erro', 'Provedor LLM inválido. Selecione um provedor.', 'error-message', false, false);
             ensureProviderSelected();
             return;
         }
 
+        // Função helper para mensagens de sistema consistentes
+        function addSystemMessage(message, icon = 'info-circle', iconColor = '#2196F3') {
+            const systemMessage = document.createElement('div');
+            systemMessage.classList.add('message', 'system-message');
+
+            const content = document.createElement('div');
+            content.classList.add('message-content');
+            content.innerHTML = `
+            <div style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;">
+                <i class="fas fa-${icon}" style="color: ${iconColor}; flex-shrink: 0;"></i>
+                <span style="flex: 1; min-width: 200px; text-align: center;">${message}</span>
+            </div>
+        `;
+
+            systemMessage.appendChild(content);
+            messagesDiv.appendChild(systemMessage);
+            scrollToBottom('auto');
+
+            return systemMessage;
+        }
+
+        // PAYLOAD COMPLETO E VALIDADO
         const payload = {
+            type: 'message', // ADICIONA TIPO
             provider: provider.value,
             model: provider.model || "",
             prompt: message,
             history: history,
-            files: attachedFiles
+            files: attachedFiles.slice() // Clona para evitar mutação
         };
 
-        try {
-            console.log('📤 Enviando mensagem:', {
-                provider: provider.value,
-                model: provider.model,
-                prompt_length: message.length,
-                history_length: history.length,
-                files_count: attachedFiles.length
-            });
+        // LOG DETALHADO
+        console.log('📤 Enviando mensagem:', {
+            provider: payload.provider,
+            model: payload.model,
+            prompt_length: message.length,
+            history_length: history.length,
+            files_count: payload.files.length,
+            payload_keys: Object.keys(payload)
+        });
 
-            ws.send(JSON.stringify(payload));
+        // VALIDAÇÃO FINAL ANTES DE ENVIAR
+        if (!payload.provider) {
+            console.error('❌ CRÍTICO: Payload sem provider!', payload);
+            addMessage('Erro', 'Erro interno: provider não definido.', 'error-message', false, false);
+            return;
+        }
+
+        // Envia
+        const sent = connectionManager.send(payload);
+
+        if (sent) {
             addMessage(assistantName, '', 'assistant-message', false, false, true);
-        } catch (error) {
-            console.error('❌ Erro ao enviar mensagem:', error);
-            addMessage('Erro', 'Erro ao enviar mensagem. Tente novamente.', 'error-message', false, false);
+        } else {
+            console.warn('⚠️ Mensagem adicionada à fila');
+            addMessage('Sistema', 'Mensagem na fila, aguardando reconexão...', 'system-message', false, false);
         }
     }
 
-    // ============================================
-    // PROCESSAMENTO DE ARQUIVOS
-    // ============================================
+// ============================================
+// PROCESSAMENTO DE ARQUIVOS
+// ============================================
     async function handleFilesSelected(event) {
         if (processingFiles) {
             addMessage('Aviso', 'Aguarde o processamento dos arquivos anteriores.', 'system-message', false, false);
@@ -581,9 +911,25 @@ document.addEventListener('DOMContentLoaded', () => {
             attachedFiles = processedFiles;
 
             const totalSize = processedFiles.reduce((sum, f) => sum + f.size, 0);
-            addMessage('Sistema',
-                `✅ ${processedFiles.length} arquivo(s) anexado(s) com sucesso (${formatSize(totalSize)})`,
-                'system-message', false, false);
+            updateFilePreview();
+
+            // Remove mensagem de progresso antes de adicionar nova
+            removeProgressMessage();
+
+            // Adiciona mensagem de sucesso
+            const successMessage = document.createElement('div');
+            successMessage.classList.add('message', 'system-message');
+            const successContent = document.createElement('div');
+            successContent.classList.add('message-content');
+            successContent.innerHTML = `
+        <div style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <i class="fas fa-check-circle" style="color: #4CAF50;"></i>
+            <span>${processedFiles.length} arquivo(s) anexado(s) com sucesso (${formatSize(totalSize)})</span>
+        </div>
+    `;
+            successMessage.appendChild(successContent);
+            messagesDiv.appendChild(successMessage);
+            scrollToBottom('auto');
 
             updateFilePreview();
         } catch (error) {
@@ -822,9 +1168,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // ============================================
-    // GERENCIAMENTO DE CONVERSAS
-    // ============================================
+// ============================================
+// GERENCIAMENTO DE CONVERSAS
+// ============================================
     function clearCurrentChatHistory() {
         if (!currentChatID || !confirm("Tem certeza que deseja limpar o histórico desta conversa?")) return;
         localStorage.setItem(currentChatID, '[]');
@@ -919,13 +1265,47 @@ document.addEventListener('DOMContentLoaded', () => {
         return (JSON.parse(localStorage.getItem('chatList')) || []).some(c => c.id === chatID);
     }
 
-    // ============================================
-    // EXIBIÇÃO DE MENSAGENS
-    // ============================================
+// ============================================
+// EXIBIÇÃO DE MENSAGENS
+// ============================================
     function scrollToBottom(behavior = 'smooth') {
+        // Usa requestAnimationFrame para scroll mais eficiente
         requestAnimationFrame(() => {
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            const isNearBottom = messagesDiv.scrollHeight - messagesDiv.scrollTop - messagesDiv.clientHeight < 100;
+
+            if (isNearBottom || behavior === 'auto') {
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            } else {
+                messagesDiv.scrollTo({
+                    top: messagesDiv.scrollHeight,
+                    behavior: 'smooth'
+                });
+            }
         });
+    }
+
+    function showLoadingIndicator(message = 'Processando resposta...') {
+        const loadingDiv = document.createElement('div');
+        loadingDiv.id = 'loading-indicator';
+        loadingDiv.className = 'message system-message';
+        loadingDiv.innerHTML = `
+            <div class="message-content">
+                <strong>Sistema:</strong>
+                <div style="display: flex; align-items: center; gap: 10px; justify-content: center;">
+                    <div class="typing-indicator">
+                        <span></span><span></span><span></span>
+                    </div>
+                    <span>${message}</span>
+                </div>
+            </div>
+        `;
+        messagesDiv.appendChild(loadingDiv);
+        scrollToBottom();
+    }
+
+    function removeLoadingIndicator() {
+        const loading = document.getElementById('loading-indicator');
+        if (loading) loading.remove();
     }
 
     function addMessage(sender, text, messageClass, isMarkdown = false, save = false, isTyping = false) {
@@ -966,133 +1346,140 @@ document.addEventListener('DOMContentLoaded', () => {
         return contentElement;
     }
 
+    // Debounce para evitar múltiplas chamadas
+    function debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    }
+
+    // Syntax highlighting otimizado com debounce
+    const highlightCodeBlocks = debounce((container) => {
+        container.querySelectorAll('pre code').forEach(block => {
+            if (!block.classList.contains('hljs')) {
+                hljs.highlightElement(block);
+            }
+        });
+
+        container.querySelectorAll('pre').forEach(pre => {
+            if (!pre.closest('.code-block-wrapper')) {
+                addCopyButton(pre);
+            }
+        });
+    }, 100);
+
+    /**
+     * Orquestra o efeito de digitação usando a técnica "Type-then-Swap".
+     * 1. Cria um contêiner <pre> temporário para a digitação do texto bruto.
+     * 2. Anima a digitação do texto Markdown/puro nesse contêiner.
+     * 3. Ao concluir, substitui o contêiner temporário pelo HTML final renderizado.
+     */
     function addMessageWithTypingEffect(sender, text, messageClass, isMarkdown, save) {
         const messageElement = document.createElement('div');
         messageElement.classList.add('message', messageClass);
         const contentElement = document.createElement('div');
         contentElement.classList.add('message-content');
-        contentElement.innerHTML = `<strong>${sender}:</strong> <span class="typing-content"></span>`;
+
+        // Adiciona o nome do remetente
+        contentElement.innerHTML = `<strong>${sender}:</strong> `;
+
+        // Passo 1: Cria o contêiner temporário para a digitação do texto bruto.
+        // Usar <pre><code> garante que o layout não quebre durante a digitação.
+        const tempTypingWrapper = document.createElement('pre');
+        tempTypingWrapper.style.display = 'inline'; // Para fluir junto com o nome do remetente
+        tempTypingWrapper.style.margin = '0';
+        tempTypingWrapper.style.padding = '0';
+        tempTypingWrapper.style.background = 'none';
+        tempTypingWrapper.style.whiteSpace = 'pre-wrap'; // Permite quebra de linha
+        tempTypingWrapper.style.wordBreak = 'break-word';
+
+        const tempTypingElement = document.createElement('code');
+        tempTypingElement.style.fontFamily = 'inherit';
+        tempTypingElement.style.color = 'inherit';
+        tempTypingElement.style.background = 'none';
+        tempTypingElement.style.padding = '0';
+        tempTypingElement.classList.add('typing-content'); // Adiciona o cursor piscando
+
+        tempTypingWrapper.appendChild(tempTypingElement);
+        contentElement.appendChild(tempTypingWrapper);
 
         messageElement.appendChild(contentElement);
         messagesDiv.appendChild(messageElement);
-        scrollToBottom();
+        scrollToBottom('auto');
 
-        const typingContainer = contentElement.querySelector('.typing-content');
+        // Função a ser chamada quando a digitação terminar
+        const onTypingComplete = () => {
+            // Passo 3: Troca o conteúdo bruto pelo HTML formatado
+            tempTypingWrapper.remove(); // Remove o contêiner temporário
 
-        if (isMarkdown) {
-            typeWriterMarkdown(typingContainer, text, () => {
-                typingContainer.classList.add('complete');
-                if (save) saveMessage(sender, text, isMarkdown);
-                contentElement.querySelectorAll('pre code').forEach(block => {
-                    hljs.highlightElement(block);
-                });
-                contentElement.querySelectorAll('pre').forEach(pre => {
-                    if (!pre.closest('.code-block-wrapper')) {
-                        addCopyButton(pre);
-                    }
-                });
-            });
-        } else {
-            typeWriterPlainText(typingContainer, text, () => {
-                typingContainer.classList.add('complete');
-                if (save) saveMessage(sender, text, isMarkdown);
-            });
-        }
+            const finalContentSpan = document.createElement('span');
+
+            let finalHtml;
+            if (isMarkdown) {
+                finalHtml = DOMPurify.sanitize(marked.parse(text));
+            } else {
+                // Para texto puro, apenas escapa e substitui quebras de linha
+                const tempDiv = document.createElement('div');
+                tempDiv.textContent = text;
+                finalHtml = tempDiv.innerHTML.replace(/\n/g, "<br>");
+            }
+
+            finalContentSpan.innerHTML = finalHtml;
+            contentElement.appendChild(finalContentSpan);
+
+            // Remove a classe do cursor piscando do elemento pai
+            tempTypingElement.classList.remove('typing-content');
+
+            // Aplica o highlighting e botões de cópia no conteúdo final
+            if (isMarkdown) {
+                highlightCodeBlocks(contentElement);
+            }
+
+            if (save) saveMessage(sender, text, isMarkdown);
+        };
+
+        // Passo 2: Inicia a digitação do texto bruto no contêiner temporário
+        typeWriterSimple(tempTypingElement, text, onTypingComplete);
     }
 
-    function typeWriterPlainText(container, text, onComplete) {
+    /**
+     * Anima a digitação de texto puro em um elemento, caractere por caractere.
+     */
+    function typeWriterSimple(container, text, onComplete) {
         let i = 0;
-        const speed = 10;
+        const charsPerFrame = 3; // Ajuste para controlar a velocidade (1 = lento, 5 = rápido)
+        let animationFrameId = null;
 
         function type() {
             if (i < text.length) {
-                container.textContent += text.charAt(i);
-                i++;
-                scrollToBottom();
-                setTimeout(type, speed);
-            } else {
-                if (onComplete) onComplete();
-            }
-        }
-        type();
-    }
+                const endIndex = Math.min(i + charsPerFrame, text.length);
+                container.textContent += text.substring(i, endIndex);
+                i = endIndex;
 
-    function typeWriterMarkdown(container, markdown, onComplete) {
-        const lines = markdown.split('\n');
-        let currentLine = 0;
-        let currentChar = 0;
-        let inCodeBlock = false;
-        let codeBlockContent = '';
-        let codeBlockLanguage = '';
-        let accumulatedContent = '';
-
-        function typeNextChar() {
-            if (currentLine >= lines.length) {
-                const finalHtml = DOMPurify.sanitize(marked.parse(accumulatedContent));
-                container.innerHTML = finalHtml;
-                if (onComplete) onComplete();
-                return;
-            }
-
-            const line = lines[currentLine];
-
-            if (line.startsWith('```')) {
-                if (!inCodeBlock) {
-                    inCodeBlock = true;
-                    codeBlockLanguage = line.substring(3).trim();
-                    codeBlockContent = '';
-                } else {
-                    inCodeBlock = false;
-                    accumulatedContent += '```' + codeBlockLanguage + '\n' + codeBlockContent + '\n```\n';
-                    codeBlockContent = '';
-                    codeBlockLanguage = '';
-                    currentLine++;
-                    currentChar = 0;
-                    renderCurrentContent();
-                    setTimeout(typeNextChar, 50);
-                    return;
+                // Mantém o scroll no fundo de forma eficiente
+                const isScrolledToBottom = messagesDiv.scrollHeight - messagesDiv.clientHeight <= messagesDiv.scrollTop + 100;
+                if (isScrolledToBottom) {
+                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
                 }
-                currentLine++;
-                currentChar = 0;
-                setTimeout(typeNextChar, 20);
-                return;
-            }
 
-            if (inCodeBlock) {
-                codeBlockContent += line + '\n';
-                currentLine++;
-                currentChar = 0;
-                setTimeout(typeNextChar, 20);
-                return;
-            }
-
-            if (currentChar < line.length) {
-                accumulatedContent += line.charAt(currentChar);
-                currentChar++;
-                renderCurrentContent();
-                setTimeout(typeNextChar, 5);
+                animationFrameId = requestAnimationFrame(type);
             } else {
-                accumulatedContent += '\n';
-                currentLine++;
-                currentChar = 0;
-                renderCurrentContent();
-                setTimeout(typeNextChar, 20);
+                if (onComplete) onComplete();
             }
         }
 
-        function renderCurrentContent() {
-            const html = DOMPurify.sanitize(marked.parse(accumulatedContent));
-            container.innerHTML = html;
-            scrollToBottom();
-        }
-
-        typeNextChar();
+        animationFrameId = requestAnimationFrame(type);
     }
 
     function removeLastMessageIfTyping() {
         const typingMessage = messagesDiv.querySelector('.message.typing');
         if (typingMessage) messagesDiv.removeChild(typingMessage);
-        removeProgressMessage();
     }
 
     function saveMessage(sender, text, isMarkdown) {
@@ -1114,9 +1501,9 @@ document.addEventListener('DOMContentLoaded', () => {
         loadChatList();
     }
 
-    // ============================================
-    // UI E TEMAS
-    // ============================================
+// ============================================
+// UI E TEMAS
+// ============================================
     function toggleSidebar() {
         document.body.classList.toggle('sidebar-hidden');
         localStorage.setItem('sidebar', document.body.classList.contains('sidebar-hidden') ? 'hidden' : 'visible');
@@ -1141,9 +1528,36 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // ============================================
-    // MOBILE E RESPONSIVIDADE
-    // ============================================
+// ============================================
+// NOTIFICAÇÕES
+// ============================================
+    function showNotification(message, type = 'info', duration = 2000) {
+        const notification = document.createElement('div');
+        notification.className = `keyboard-notification ${type}`;
+
+        const icons = {
+            success: 'check-circle',
+            error: 'exclamation-circle',
+            info: 'info-circle'
+        };
+
+        notification.innerHTML = `
+                <i class="fas fa-${icons[type]}"></i>
+                <span>${message}</span>
+            `;
+
+        document.body.appendChild(notification);
+        setTimeout(() => notification.classList.add('show'), 10);
+
+        setTimeout(() => {
+            notification.classList.remove('show');
+            setTimeout(() => notification.remove(), 300);
+        }, duration);
+    }
+
+// ============================================
+// MOBILE E RESPONSIVIDADE
+// ============================================
     function setupMobileInteractions() {
         if (window.innerWidth <= 768) {
             document.addEventListener('click', (e) => {
@@ -1199,9 +1613,9 @@ document.addEventListener('DOMContentLoaded', () => {
         this.style.height = `${Math.min(this.scrollHeight, maxHeight)}px`;
     }
 
-    // ============================================
-    // BOTÕES DE COPIAR CÓDIGO
-    // ============================================
+// ============================================
+// BOTÕES DE COPIAR CÓDIGO
+// ============================================
     function addCopyButtonsToCode() {
         const observer = new MutationObserver((mutations) => {
             mutations.forEach((mutation) => {
@@ -1244,7 +1658,7 @@ document.addEventListener('DOMContentLoaded', () => {
         button.setAttribute('aria-label', 'Copiar código');
 
         button.onclick = async () => {
-            const code = preElement.querySelector('code').textContent;
+            const code = preElement.querySelector('code')?.textContent || preElement.textContent;
             try {
                 await navigator.clipboard.writeText(code);
                 button.innerHTML = '<i class="fas fa-check"></i>';
@@ -1267,8 +1681,9 @@ document.addEventListener('DOMContentLoaded', () => {
         wrapper.appendChild(button);
     }
 
-    // ============================================
-    // INICIALIZA APLICAÇÃO
-    // ============================================
+// ============================================
+// INICIALIZA APLICAÇÃO
+// ============================================
     initialize();
 });
+

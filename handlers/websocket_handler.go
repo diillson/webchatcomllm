@@ -22,25 +22,23 @@ const (
 	MaxTotalUploadSize = 50 * 1024 * 1024
 	MaxFilesPerRequest = 50
 
-	// WebSocket timeouts otimizados para Firefox
-	writeWait      = 30 * time.Second
-	pongWait       = 90 * time.Second
-	pingPeriod     = (pongWait * 8) / 10
+	// WebSocket timeouts otimizados
+	writeWait      = 45 * time.Second
+	pongWait       = 120 * time.Second
+	pingPeriod     = 30 * time.Second
 	maxMessageSize = 1024 * 1024 // 1MB
 )
 
-// CORREÇÃO: Upgrader com configurações específicas para Firefox
+// Upgrader com configurações robustas
 var upgrader = websocket.Upgrader{
-	ReadBufferSize:  8192,
-	WriteBufferSize: 8192,
+	ReadBufferSize:  16384,
+	WriteBufferSize: 16384,
 	CheckOrigin: func(r *http.Request) bool {
-		return true // Em produção, valide o origin adequadamente
+		return true // Em produção, validar origin adequadamente
 	},
-	Subprotocols: []string{"chat", ""},
-	// IMPORTANTE: Não força compressão (Firefox tem problemas)
+	Subprotocols:      []string{"chat", ""},
 	EnableCompression: false,
-	// IMPORTANTE: HandshakeTimeout maior para Firefox
-	HandshakeTimeout: 10 * time.Second,
+	HandshakeTimeout:  15 * time.Second,
 }
 
 type FilePayload struct {
@@ -54,6 +52,7 @@ type FilePayload struct {
 }
 
 type RequestPayload struct {
+	Type     string           `json:"type,omitempty"` // ping, pong, message
 	Provider string           `json:"provider"`
 	Model    string           `json:"model"`
 	Prompt   string           `json:"prompt"`
@@ -62,6 +61,7 @@ type RequestPayload struct {
 }
 
 type ResponsePayload struct {
+	Type       string `json:"type,omitempty"` // pong, message, error
 	Status     string `json:"status"`
 	Response   string `json:"response"`
 	IsMarkdown bool   `json:"isMarkdown"`
@@ -69,6 +69,7 @@ type ResponsePayload struct {
 }
 
 type ProgressPayload struct {
+	Type       string `json:"type"`
 	Status     string `json:"status"`
 	Message    string `json:"message"`
 	Current    int    `json:"current,omitempty"`
@@ -85,13 +86,17 @@ type Client struct {
 	logger        *zap.Logger
 	mu            sync.Mutex
 	closed        bool
+	lastActivity  time.Time
+	messageQueue  [][]byte
+	queueMu       sync.Mutex
 }
 
+// WebSocketHandler cria o handler HTTP para WebSocket
 func WebSocketHandler(llmManager manager.LLMManager, logger *zap.Logger) http.HandlerFunc {
 	fileProcessor := utils.NewFileProcessor(logger)
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Detecta Firefox
+		// Detecta browser
 		userAgent := r.UserAgent()
 		isFirefox := strings.Contains(strings.ToLower(userAgent), "firefox")
 
@@ -102,7 +107,7 @@ func WebSocketHandler(llmManager manager.LLMManager, logger *zap.Logger) http.Ha
 			zap.Bool("is_firefox", isFirefox),
 		)
 
-		// CORREÇÃO: Headers específicos para Firefox
+		// Headers específicos para compatibilidade
 		responseHeader := http.Header{}
 		if isFirefox {
 			responseHeader.Set("Access-Control-Allow-Origin", "*")
@@ -110,6 +115,7 @@ func WebSocketHandler(llmManager manager.LLMManager, logger *zap.Logger) http.Ha
 			responseHeader.Set("Access-Control-Allow-Headers", "Content-Type")
 		}
 
+		// Upgrade para WebSocket
 		conn, err := upgrader.Upgrade(w, r, responseHeader)
 		if err != nil {
 			logger.Error("Erro ao fazer upgrade para WebSocket",
@@ -120,6 +126,7 @@ func WebSocketHandler(llmManager manager.LLMManager, logger *zap.Logger) http.Ha
 			return
 		}
 
+		// Cria cliente
 		client := &Client{
 			conn:          conn,
 			send:          make(chan []byte, 256),
@@ -127,6 +134,8 @@ func WebSocketHandler(llmManager manager.LLMManager, logger *zap.Logger) http.Ha
 			fileProcessor: fileProcessor,
 			logger:        logger,
 			closed:        false,
+			lastActivity:  time.Now(),
+			messageQueue:  make([][]byte, 0),
 		}
 
 		logger.Info("Cliente WebSocket conectado com sucesso",
@@ -137,7 +146,8 @@ func WebSocketHandler(llmManager manager.LLMManager, logger *zap.Logger) http.Ha
 
 		// Inicia goroutines
 		go client.writePump()
-		go client.readPump()
+		go client.healthCheck()
+		client.readPump() // Bloqueia aqui
 	}
 }
 
@@ -153,7 +163,9 @@ func (c *Client) readPump() {
 	c.conn.SetReadLimit(maxMessageSize)
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error {
+		c.lastActivity = time.Now()
 		c.conn.SetReadDeadline(time.Now().Add(pongWait))
+		c.logger.Debug("Pong recebido")
 		return nil
 	})
 
@@ -166,9 +178,13 @@ func (c *Client) readPump() {
 				websocket.CloseNormalClosure,
 				websocket.CloseNoStatusReceived) {
 				c.logger.Error("Erro inesperado ao ler mensagem", zap.Error(err))
+			} else {
+				c.logger.Debug("Conexão fechada normalmente")
 			}
 			break
 		}
+
+		c.lastActivity = time.Now()
 
 		if messageType == websocket.TextMessage {
 			c.handleMessage(message)
@@ -194,12 +210,20 @@ func (c *Client) writePump() {
 				return
 			}
 
-			// CORREÇÃO: Tenta escrever, mas não trava se der erro
 			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				c.logger.Warn("Erro ao escrever mensagem (cliente pode ter desconectado)",
 					zap.Error(err))
+
+				// Adiciona mensagem à fila para reenvio
+				c.queueMu.Lock()
+				c.messageQueue = append(c.messageQueue, message)
+				c.queueMu.Unlock()
+
 				return
 			}
+
+			c.logger.Debug("Mensagem enviada com sucesso",
+				zap.Int("size", len(message)))
 
 		case <-ticker.C:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
@@ -208,6 +232,61 @@ func (c *Client) writePump() {
 					zap.Error(err))
 				return
 			}
+			c.logger.Debug("Ping enviado")
+		}
+	}
+}
+
+// healthCheck monitora a saúde da conexão
+func (c *Client) healthCheck() {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if c.isClosed() {
+				return
+			}
+
+			// Verifica inatividade
+			if time.Since(c.lastActivity) > 5*time.Minute {
+				c.logger.Warn("Cliente inativo, fechando conexão",
+					zap.Duration("inactive_for", time.Since(c.lastActivity)))
+				c.close()
+				return
+			}
+
+			// Reenvia mensagens da fila
+			c.flushMessageQueue()
+		}
+	}
+}
+
+// flushMessageQueue reenvia mensagens que falharam
+func (c *Client) flushMessageQueue() {
+	c.queueMu.Lock()
+	defer c.queueMu.Unlock()
+
+	if len(c.messageQueue) == 0 {
+		return
+	}
+
+	c.logger.Info("Reenviando mensagens da fila",
+		zap.Int("queue_size", len(c.messageQueue)))
+
+	for len(c.messageQueue) > 0 && !c.isClosed() {
+		message := c.messageQueue[0]
+		c.messageQueue = c.messageQueue[1:]
+
+		select {
+		case c.send <- message:
+			c.logger.Debug("Mensagem da fila reenviada")
+		default:
+			c.logger.Warn("Falha ao reenviar mensagem da fila")
+			// Recoloca na fila
+			c.messageQueue = append([][]byte{message}, c.messageQueue...)
+			return
 		}
 	}
 }
@@ -224,6 +303,9 @@ func (c *Client) close() {
 	c.closed = true
 	close(c.send)
 	c.conn.Close()
+
+	c.logger.Info("Conexão fechada",
+		zap.Int("queued_messages", len(c.messageQueue)))
 }
 
 // isClosed verifica se a conexão está fechada
@@ -237,14 +319,39 @@ func (c *Client) isClosed() bool {
 func (c *Client) handleMessage(payload []byte) {
 	var req RequestPayload
 	if err := json.Unmarshal(payload, &req); err != nil {
+		c.logger.Error("Erro ao decodificar payload",
+			zap.Error(err),
+			zap.String("payload_raw", string(payload)),
+		)
 		c.sendError("Payload inválido: " + err.Error())
 		return
 	}
 
-	// CORREÇÃO: Valida campos obrigatórios
+	// LOG COMPLETO DO PAYLOAD RECEBIDO
+	c.logger.Debug("Payload recebido",
+		zap.String("type", req.Type),
+		zap.String("provider", req.Provider),
+		zap.String("model", req.Model),
+		zap.Int("prompt_length", len(req.Prompt)),
+		zap.Int("history_length", len(req.History)),
+		zap.Int("files_count", len(req.Files)),
+	)
+
+	// Trata ping/pong
+	if req.Type == "ping" {
+		c.sendJSON(ResponsePayload{
+			Type:   "pong",
+			Status: "ok",
+		})
+		return
+	}
+
+	// VALIDAÇÃO DETALHADA
 	if req.Provider == "" {
 		c.logger.Error("Provider vazio recebido",
-			zap.String("payload", string(payload)),
+			zap.String("payload_raw", string(payload)),
+			zap.String("type", req.Type),
+			zap.String("model", req.Model),
 		)
 		c.sendError("Provedor LLM não especificado. Selecione um provedor e tente novamente.")
 		return
@@ -255,12 +362,9 @@ func (c *Client) handleMessage(payload []byte) {
 		return
 	}
 
-	c.logger.Debug("Mensagem recebida",
+	c.logger.Info("Mensagem válida recebida",
 		zap.String("provider", req.Provider),
 		zap.String("model", req.Model),
-		zap.String("prompt_preview", truncate(req.Prompt, 50)),
-		zap.Int("files", len(req.Files)),
-		zap.Int("history_length", len(req.History)),
 	)
 
 	// Valida número de arquivos
@@ -269,6 +373,12 @@ func (c *Client) handleMessage(payload []byte) {
 		return
 	}
 
+	// Processa em goroutine separada
+	go c.processMessage(req)
+}
+
+// processMessage processa a requisição do LLM
+func (c *Client) processMessage(req RequestPayload) {
 	// Processa arquivos se houver
 	fileContext := ""
 	if len(req.Files) > 0 {
@@ -314,6 +424,7 @@ func (c *Client) handleMessage(payload []byte) {
 	)
 
 	c.sendJSON(ResponsePayload{
+		Type:       "message",
 		Status:     "completed",
 		Response:   llmResponse,
 		IsMarkdown: isMarkdown,
@@ -339,6 +450,10 @@ func (c *Client) sendJSON(v interface{}) {
 		// Sucesso
 	case <-time.After(5 * time.Second):
 		c.logger.Warn("Timeout ao enviar mensagem para cliente")
+		// Adiciona à fila
+		c.queueMu.Lock()
+		c.messageQueue = append(c.messageQueue, data)
+		c.queueMu.Unlock()
 	}
 }
 
@@ -346,6 +461,7 @@ func (c *Client) sendJSON(v interface{}) {
 func (c *Client) sendError(message string) {
 	c.logger.Warn("Enviando erro para cliente", zap.String("error", message))
 	c.sendJSON(ResponsePayload{
+		Type:     "message",
 		Status:   "error",
 		Response: message,
 	})
@@ -354,6 +470,7 @@ func (c *Client) sendError(message string) {
 // sendProgress envia progresso
 func (c *Client) sendProgress(message string, current, total, percentage int) {
 	c.sendJSON(ProgressPayload{
+		Type:       "progress",
 		Status:     "processing",
 		Message:    message,
 		Current:    current,
@@ -370,6 +487,7 @@ func truncate(s string, max int) string {
 	return s[:max] + "..."
 }
 
+// processFilesAdvanced processa múltiplos arquivos
 func processFilesAdvanced(files []FilePayload, fp *utils.FileProcessor, c *Client, logger *zap.Logger) (string, error) {
 	if len(files) == 0 {
 		return "", nil
@@ -484,6 +602,7 @@ func processFilesAdvanced(files []FilePayload, fp *utils.FileProcessor, c *Clien
 	return contextBuilder.String(), nil
 }
 
+// detectMarkdown detecta se o texto contém markdown
 func detectMarkdown(text string) bool {
 	markdownIndicators := []string{
 		"```", "# ", "## ", "### ", "- ", "* ", "1. ",
@@ -500,6 +619,7 @@ func detectMarkdown(text string) bool {
 	return strings.Contains(text, "\n\n")
 }
 
+// getFileIcon retorna o ícone do tipo de arquivo
 func getFileIcon(fileType utils.FileType) string {
 	icons := map[utils.FileType]string{
 		utils.FileTypeImage:    "🖼️",
@@ -521,6 +641,7 @@ func getFileIcon(fileType utils.FileType) string {
 	return "📄"
 }
 
+// getLanguageFromFileType retorna a linguagem para syntax highlighting
 func getLanguageFromFileType(fileType utils.FileType, metadata map[string]interface{}) string {
 	if lang, ok := metadata["language"].(string); ok {
 		return lang
@@ -538,6 +659,7 @@ func getLanguageFromFileType(fileType utils.FileType, metadata map[string]interf
 	}
 }
 
+// formatSize formata o tamanho em bytes
 func formatSize(bytes int64) string {
 	const unit = 1024
 	if bytes < unit {
