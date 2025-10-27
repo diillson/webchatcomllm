@@ -173,6 +173,7 @@ body.sidebar-hidden #sidebar {
     z-index: 10;
     display: flex;
     gap: 10px;
+    background-color: transparent;
 }
 
 .top-button {
@@ -1232,8 +1233,8 @@ body.dark-mode .progress-message .message-content {
 
     .top-bar {
         padding: 15px;
-        background-color: rgba(32, 33, 35, 0.95);
-        backdrop-filter: blur(10px);
+        /*background-color: rgba(32, 33, 35, 0.95);*/
+        /*backdrop-filter: blur(10px);*/
     }
 
     #toggle-sidebar-hidden {
