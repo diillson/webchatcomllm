@@ -87,7 +87,19 @@ class KeyboardShortcuts {
                 const userInput = document.getElementById('user-input');
                 if (document.activeElement === userInput && !e.shiftKey) {
                     e.preventDefault();
-                    document.getElementById('chat-form')?.dispatchEvent(new Event('submit'));
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    const form = document.getElementById('chat-form');
+                    if (form) {
+                        // Chama o handler diretamente
+                        const submitEvent = new Event('submit', {
+                            bubbles: false,
+                            cancelable: true
+                        });
+                        form.dispatchEvent(submitEvent);
+                    }
+
+                    return false;
                 }
             }
         });

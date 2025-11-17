@@ -526,9 +526,34 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 // ============================================
+// PREVENIR SUBMIT NO FIREFOX (ADICIONAR ANTES DE addEventListeners)
+// ============================================
+    function preventFirefoxEnterSubmit() {
+        if (browser === 'firefox') {
+            userInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    // Dispara o submit manualmente
+                    const submitEvent = new Event('submit', {
+                        bubbles: true,
+                        cancelable: true
+                    });
+                    chatForm.dispatchEvent(submitEvent);
+
+                    return false;
+                }
+            }, true); // ✅ USE CAPTURE PHASE (true)
+        }
+    }
+
+// ============================================
 // EVENT LISTENERS
 // ============================================
     function addEventListeners() {
+        preventFirefoxEnterSubmit();
+
         chatForm.addEventListener('submit', handleFormSubmit);
         userInput.addEventListener('input', autoResizeTextarea);
 
@@ -714,13 +739,15 @@ document.addEventListener('DOMContentLoaded', () => {
 // ============================================
     function handleFormSubmit(e) {
         e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
 
         console.log('📝 handleFormSubmit chamado');
 
         const message = userInput.value.trim();
         if (!message && attachedFiles.length === 0) {
             console.log('⚠️ Mensagem vazia e sem arquivos');
-            return;
+            return false;
         }
 
         // VALIDAÇÃO DE CONEXÃO
